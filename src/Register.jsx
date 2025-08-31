@@ -340,7 +340,7 @@ function Register() {
         {submitError && <div style={{ color: '#ff6b6b', marginTop: 8 }}>{submitError}</div>}
         {success && <div style={{ color: '#61dafb', marginTop: 8 }}>Registration successful!</div>}
       </form>
-      <button className="landing-btn" onClick={() => window.location.href = '/'} style={{marginTop: '1rem'}}>Back to Home</button>
+      <button className="landing-btn" onClick={() => window.location.href = `${import.meta.env.BASE_URL}`} style={{marginTop: '1rem'}}>Back to Home</button>
     </div>
   );
 }

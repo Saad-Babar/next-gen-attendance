@@ -53,7 +53,7 @@ function Login() {
       }));
 
       // Redirect to dashboard
-      window.location.href = '/dashboard';
+      window.location.href = `${import.meta.env.BASE_URL}dashboard`;
       
     } catch (err) {
       setError('Login failed. Please try again.');
@@ -95,7 +95,7 @@ function Login() {
           </div>
         )}
       </form>
-      <button className="landing-btn" onClick={() => window.location.href = '/'} style={{marginTop: '1rem'}}>Back to Home</button>
+      <button className="landing-btn" onClick={() => window.location.href = `${import.meta.env.BASE_URL}`} style={{marginTop: '1rem'}}>Back to Home</button>
     </div>
   );
 }

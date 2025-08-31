@@ -30,8 +30,8 @@ function App() {
         </p>
       </header>
       <div className="landing-actions">
-        <button className="landing-btn" onClick={() => window.location.href = '/register'}>Register</button>
-        <button className="landing-btn" onClick={() => window.location.href = '/login'}>Login</button>
+        <button className="landing-btn" onClick={() => window.location.href = `${import.meta.env.BASE_URL}register`}>Register</button>
+        <button className="landing-btn" onClick={() => window.location.href = `${import.meta.env.BASE_URL}login`}>Login</button>
       </div>
     </div>
   )

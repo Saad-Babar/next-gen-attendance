@@ -453,7 +453,7 @@ function Dashboard() {
         <div className="landing-header">
           <h1>Access Denied</h1>
           <p className="landing-description">Please login to access your dashboard.</p>
-          <button className="landing-btn" onClick={() => window.location.href = `${import.meta.env.BASE_URL}login`}>
+          <button className="landing-btn" onClick={() => window.location.href = '/login'}>
             Go to Login
           </button>
         </div>
@@ -631,7 +631,7 @@ function Dashboard() {
           <button className="landing-btn" onClick={handleLogout}>
             Logout
           </button>
-          <button className="landing-btn" onClick={() => window.location.href = `${import.meta.env.BASE_URL}`}>
+          <button className="landing-btn" onClick={() => window.location.href = '/'}>
             Home
           </button>
         </div>

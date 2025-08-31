@@ -89,19 +89,24 @@ function Register() {
           (position) => {
             console.log('Registration - Raw GPS:', position.coords.latitude, position.coords.longitude);
             console.log('Registration - Accuracy:', position.coords.accuracy, 'meters');
-            
-            // Accept location even if accuracy is not perfect (for registration)
-            // Round coordinates to 6 decimal places for consistency
-            const roundedLocation = {
-              lat: Math.round(position.coords.latitude * 1000000) / 1000000,
-              lng: Math.round(position.coords.longitude * 1000000) / 1000000,
-            };
-            console.log('Registration - Accuracy:', position.coords.accuracy, 'meters');
-            console.log('Registration - Rounded GPS:', roundedLocation.lat, roundedLocation.lng);
-            setForm((prev) => ({
-              ...prev,
-              location: roundedLocation,
-            }));
+            // Only accept if accuracy is good (less than or equal to 50 meters)
+            if (position.coords.accuracy <= 50) {
+              // Round coordinates to 6 decimal places for consistency
+              const roundedLocation = {
+                lat: Math.round(position.coords.latitude * 1000000) / 1000000,
+                lng: Math.round(position.coords.longitude * 1000000) / 1000000,
+              };
+              console.log('Registration - Accuracy:', position.coords.accuracy, 'meters');
+              console.log('Registration - Rounded GPS:', roundedLocation.lat, roundedLocation.lng);
+              setForm((prev) => ({
+                ...prev,
+                location: roundedLocation,
+              }));
+            } else {
+              // Show error and do not set location
+              alert(`Location accuracy is too poor (${position.coords.accuracy} meters). Please try again in an open area or with better signal.`);
+              setForm((prev) => ({ ...prev, location: null }));
+            }
           },
           (err) => {
             console.error('Registration location error:', err);

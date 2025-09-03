@@ -24,6 +24,8 @@ function Dashboard() {
   const [livenessChecked, setLivenessChecked] = useState(false);
   const [livenessError, setLivenessError] = useState('');
   const [livenessProgress, setLivenessProgress] = useState(0); // Add progress tracking
+  const [showConfirmation, setShowConfirmation] = useState(false); // Add confirmation dialog
+  const [pendingAttendanceType, setPendingAttendanceType] = useState(''); // Store pending attendance type
 
   useEffect(() => {
     // Get user data from localStorage
@@ -113,32 +115,11 @@ function Dashboard() {
     // 36-41: left eye, 42-47: right eye
     const idx = left ? 36 : 42;
     const p = landmarks.slice(idx, idx+6);
-    
-    console.log(`${left ? 'Left' : 'Right'} eye points:`, p);
-    console.log('Point 0:', p[0], 'x:', p[0]?.x, 'y:', p[0]?.y);
-    console.log('Point 1:', p[1], 'x:', p[1]?.x, 'y:', p[1]?.y);
-    console.log('Point 2:', p[2], 'x:', p[2]?.x, 'y:', p[2]?.y);
-    console.log('Point 3:', p[3], 'x:', p[3]?.x, 'y:', p[3]?.y);
-    console.log('Point 4:', p[4], 'x:', p[4]?.x, 'y:', p[4]?.y);
-    console.log('Point 5:', p[5], 'x:', p[5]?.x, 'y:', p[5]?.y);
-    
     const dist = (a, b) => Math.hypot(a.x-b.x, a.y-b.y);
-    const ear = (dist(p[1], p[5]) + dist(p[2], p[4])) / (2.0 * dist(p[0], p[3]));
-    console.log(`${left ? 'Left' : 'Right'} EAR calculation:`, ear);
-    return ear;
+    return (dist(p[1], p[5]) + dist(p[2], p[4])) / (2.0 * dist(p[0], p[3]));
   }
 
-  // Test face-api.js availability
-  const testFaceApi = () => {
-    console.log('Testing face-api.js availability...');
-    if (typeof window.faceapi === 'undefined') {
-      console.error('face-api.js is NOT loaded');
-      return false;
-    }
-    console.log('face-api.js is loaded successfully');
-    console.log('Available methods:', Object.keys(window.faceapi));
-    return true;
-  };
+
 
   // Liveness check: blink detection using face detection failure
   const runLivenessCheck = async () => {
@@ -161,6 +142,12 @@ function Dashboard() {
       
       if (!video.videoWidth || !video.videoHeight) {
         setLivenessError('Video not ready. Please wait a moment and try again.');
+        return;
+      }
+      
+      // Check if face-api is available
+      if (typeof window.faceapi === 'undefined') {
+        setLivenessError('Face detection library not loaded. Please refresh the page.');
         return;
       }
       
@@ -202,7 +189,7 @@ function Dashboard() {
             if (lastState === 'detected') blinked = true;
             lastState = 'not_detected';
           } else {
-            console.log(`Frame ${i + 1} - Face detected`);
+            console.log(`Frame ${i + 1} - Face detected, confidence: ${detection.detection.score}`);
             faceDetectedCount++;
             confidenceValues.push(detection.detection.score || 1.0); // Track confidence score
             lastState = 'detected';
@@ -234,6 +221,14 @@ function Dashboard() {
         setLivenessError('');
         setLivenessProgress(100); // Complete progress
         console.log('Liveness check PASSED - blink detected via face detection failure!');
+        
+        // Show success message immediately
+        showPopupMessage('Liveness check passed! Capturing photo...', 'success');
+        
+        // Automatically capture photo after successful liveness check
+        setTimeout(() => {
+          capturePhoto();
+        }, 1000); // Wait 1 second for user to see success message
       } else {
         setLivenessChecked(false);
         setLivenessError('No blink detected. Please blink clearly and try again.');
@@ -249,6 +244,13 @@ function Dashboard() {
   };
 
   const openCamera = async (type) => {
+    setPendingAttendanceType(type);
+    setShowConfirmation(true);
+  };
+
+  const confirmAttendance = async () => {
+    const type = pendingAttendanceType;
+    setShowConfirmation(false);
     setAttendanceType(type);
     setCameraError('');
     setShowCamera(true);
@@ -275,6 +277,9 @@ function Dashboard() {
       showPopupMessage('Video not available. Please try again.', 'error');
       return;
     }
+    
+    // Show progress message
+    showPopupMessage('Processing photo and getting location...', 'warning');
     
     // Create a temporary canvas if the ref is null
     let canvas = canvasRef.current;
@@ -379,24 +384,82 @@ function Dashboard() {
       }
       
       // --- FACE RECOGNITION ---
+      console.log('Starting face recognition...');
+      showPopupMessage('Verifying face identity...', 'warning');
       await loadFaceApiModels();
+      console.log('Face models loaded for verification');
+      
       const img = new Image();
       img.src = canvas.toDataURL('image/jpeg');
       await new Promise((resolve) => { img.onload = resolve; });
+      console.log('Image loaded, getting face descriptor...');
+      
       const capturedDescriptor = await getFaceDescriptor(img);
+      console.log('Face descriptor result:', capturedDescriptor ? 'Success' : 'Failed');
+      
+      // Multi-factor verification: Check face detection confidence
+      const faceDetection = await window.faceapi
+        .detectSingleFace(img, new window.faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks();
+      
+      const detectionConfidence = faceDetection.detection.score;
+      console.log('Face detection confidence:', detectionConfidence);
+      
+      // Additional security: Require high detection confidence
+      if (detectionConfidence < 0.8) {
+        showPopupMessage('Face detection confidence too low. Please try again.', 'error');
+        console.log('SECURITY ALERT: Low face detection confidence for user:', user.empId, 'Confidence:', detectionConfidence);
+        return;
+      }
+      
       if (!capturedDescriptor) {
         showPopupMessage('No face detected or face not clear. Please try again.', 'error');
+        console.log('SECURITY ALERT: No face detected during attendance attempt');
         return;
       }
       if (!user.faceDescriptor) {
         showPopupMessage('No reference face found. Please contact admin.', 'error');
+        console.log('SECURITY ALERT: No reference face found for user:', user.empId);
         return;
       }
       const isFaceMatch = compareFaceDescriptors(capturedDescriptor, user.faceDescriptor);
+      console.log('Face match result:', isFaceMatch);
+      
+      // Enhanced face verification with confidence score
+      const faceDistance = window.faceapi.euclideanDistance(capturedDescriptor, user.faceDescriptor);
+      console.log('Face distance:', faceDistance);
+      
+      // More strict threshold for security (0.4 instead of 0.5)
+      const strictThreshold = 0.4;
+      const isStrictMatch = faceDistance < strictThreshold;
+      
+      // Additional security: Check for suspiciously perfect matches (possible spoofing)
+      const suspiciouslyPerfect = faceDistance < 0.05; // Too perfect might be a photo
+      console.log('Suspiciously perfect match:', suspiciouslyPerfect);
+      
       if (!isFaceMatch) {
         showPopupMessage('Face verification failed. Please try again.', 'error');
+        console.log('SECURITY ALERT: Face verification failed for user:', user.empId, 'Distance:', faceDistance);
         return;
       }
+      
+      // Additional security check with stricter threshold
+      if (!isStrictMatch) {
+        showPopupMessage('Face verification failed - possible identity mismatch. Please try again.', 'error');
+        console.log('SECURITY ALERT: Strict face verification failed for user:', user.empId, 'Distance:', faceDistance);
+        return;
+      }
+      
+      // Check for suspiciously perfect matches (possible photo spoofing)
+      if (suspiciouslyPerfect) {
+        showPopupMessage('Suspicious verification result. Please try again with better lighting.', 'error');
+        console.log('SECURITY ALERT: Suspiciously perfect match detected for user:', user.empId, 'Distance:', faceDistance);
+        return;
+      }
+      
+      // Show success message for face verification
+      showPopupMessage('Face verified! Recording attendance...', 'success');
+      console.log('SECURITY SUCCESS: Face verification passed for user:', user.empId, 'Distance:', faceDistance);
       
       // Process attendance
       await processAttendance(attendanceType, currentLocation);
@@ -427,7 +490,7 @@ function Dashboard() {
     setShowPopup(true);
     setTimeout(() => {
       setShowPopup(false);
-    }, 5000); // Auto-hide after 5 seconds
+    }, 8000); // Auto-hide after 8 seconds (increased from 5)
   };
 
   const processAttendance = async (type, location) => {
@@ -675,9 +738,6 @@ function Dashboard() {
               autoPlay
               playsInline
             />
-            <button className="landing-btn" onClick={testFaceApi} style={{marginTop: '1rem'}}>
-              Test Face API
-            </button>
             <button className="landing-btn" onClick={runLivenessCheck} style={{marginTop: '1rem'}} disabled={livenessChecked}>
               {livenessChecked ? 'Liveness Check Passed (Blink Detected)' : 'Start Liveness Check (Blink)'}
             </button>
@@ -702,40 +762,7 @@ function Dashboard() {
                 </div>
               </div>
             )}
-            <button className="landing-btn" onClick={() => {
-              console.log('Testing with eyes closed...');
-              console.log('Please close your eyes completely and click this button again in 3 seconds');
-              
-              setTimeout(() => {
-                if (videoRef.current) {
-                  const canvas = document.createElement('canvas');
-                  canvas.width = videoRef.current.videoWidth;
-                  canvas.height = videoRef.current.videoHeight;
-                  const ctx = canvas.getContext('2d');
-                  ctx.drawImage(videoRef.current, 0, 0);
-                  
-                  window.faceapi.detectSingleFace(canvas, new window.faceapi.TinyFaceDetectorOptions())
-                    .withFaceLandmarks()
-                    .then(detection => {
-                      if (detection && detection.landmarks) {
-                        const landmarks = detection.landmarks.positions;
-                        const leftEAR = getEAR(landmarks, true);
-                        const rightEAR = getEAR(landmarks, false);
-                        const ear = (leftEAR + rightEAR) / 2;
-                        console.log('EAR with eyes CLOSED:', ear);
-                        console.log('Left EAR:', leftEAR);
-                        console.log('Right EAR:', rightEAR);
-                      }
-                    });
-                }
-              }, 3000);
-            }} style={{marginTop: '1rem'}}>
-              Test Eyes Closed
-            </button>
             {livenessError && <div style={{ color: '#ff6b6b', marginTop: 8 }}>{livenessError}</div>}
-            <button className="landing-btn" onClick={capturePhoto} style={{marginTop: '1rem'}} disabled={!livenessChecked}>
-              Capture Photo
-            </button>
             <canvas 
               ref={canvasRef} 
               style={{ display: 'none' }}
@@ -804,6 +831,73 @@ function Dashboard() {
               >
                 OK
               </button>
+            </div>
+          </div>
+        )}
+        
+        {/* Confirmation Dialog */}
+        {showConfirmation && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #61dafb 0%, #646cff 100%)',
+              padding: '2rem',
+              borderRadius: '12px',
+              maxWidth: '400px',
+              textAlign: 'center',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+              border: '2px solid rgba(255,255,255,0.2)'
+            }}>
+              <h3 style={{ 
+                color: '#fff', 
+                marginBottom: '1rem',
+                fontSize: '1.5rem',
+                fontWeight: 'bold'
+              }}>
+                🤔 Confirm Attendance
+              </h3>
+              <p style={{ 
+                color: '#fff', 
+                fontSize: '1.1rem',
+                lineHeight: '1.5',
+                marginBottom: '1.5rem'
+              }}>
+                Are you sure you want to <strong>{pendingAttendanceType === 'checkin' ? 'CHECK IN' : 'CHECK OUT'}</strong>?
+              </p>
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                <button 
+                  className="landing-btn" 
+                  onClick={() => setShowConfirmation(false)}
+                  style={{ 
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.3)'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="landing-btn" 
+                  onClick={confirmAttendance}
+                  style={{ 
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.3)'
+                  }}
+                >
+                  Yes, Proceed
+                </button>
+              </div>
             </div>
           </div>
         )}

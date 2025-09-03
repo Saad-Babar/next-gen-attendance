@@ -23,6 +23,7 @@ function Dashboard() {
   let stream = useRef(null);
   const [livenessChecked, setLivenessChecked] = useState(false);
   const [livenessError, setLivenessError] = useState('');
+  const [livenessProgress, setLivenessProgress] = useState(0); // Add progress tracking
 
   useEffect(() => {
     // Get user data from localStorage
@@ -112,59 +113,138 @@ function Dashboard() {
     // 36-41: left eye, 42-47: right eye
     const idx = left ? 36 : 42;
     const p = landmarks.slice(idx, idx+6);
+    
+    console.log(`${left ? 'Left' : 'Right'} eye points:`, p);
+    console.log('Point 0:', p[0], 'x:', p[0]?.x, 'y:', p[0]?.y);
+    console.log('Point 1:', p[1], 'x:', p[1]?.x, 'y:', p[1]?.y);
+    console.log('Point 2:', p[2], 'x:', p[2]?.x, 'y:', p[2]?.y);
+    console.log('Point 3:', p[3], 'x:', p[3]?.x, 'y:', p[3]?.y);
+    console.log('Point 4:', p[4], 'x:', p[4]?.x, 'y:', p[4]?.y);
+    console.log('Point 5:', p[5], 'x:', p[5]?.x, 'y:', p[5]?.y);
+    
     const dist = (a, b) => Math.hypot(a.x-b.x, a.y-b.y);
-    return (
-      (dist(p[1], p[5]) + dist(p[2], p[4])) / (2.0 * dist(p[0], p[3]))
-    );
+    const ear = (dist(p[1], p[5]) + dist(p[2], p[4])) / (2.0 * dist(p[0], p[3]));
+    console.log(`${left ? 'Left' : 'Right'} EAR calculation:`, ear);
+    return ear;
   }
 
-  // Liveness check: blink detection
+  // Test face-api.js availability
+  const testFaceApi = () => {
+    console.log('Testing face-api.js availability...');
+    if (typeof window.faceapi === 'undefined') {
+      console.error('face-api.js is NOT loaded');
+      return false;
+    }
+    console.log('face-api.js is loaded successfully');
+    console.log('Available methods:', Object.keys(window.faceapi));
+    return true;
+  };
+
+  // Liveness check: blink detection using face detection failure
   const runLivenessCheck = async () => {
+    console.log('Starting liveness check...');
     setLivenessError('');
-    await loadFaceApiModels();
-    if (!videoRef.current) {
-      setLivenessError('Video not available. Please try again.');
-      return;
-    }
-    const video = videoRef.current;
-    const frames = [];
-    // Capture frames for 2 seconds (every 100ms)
-    for (let i = 0; i < 20; i++) {
-      await new Promise(res => setTimeout(res, 100));
-      const canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth || 640;
-      canvas.height = video.videoHeight || 480;
-      canvas.getContext('2d').drawImage(video, 0, 0);
-      frames.push(canvas);
-    }
-    // Analyze EAR for each frame
-    let openCount = 0, closedCount = 0, blinked = false;
-    let lastState = 'open';
-    for (const frame of frames) {
-      const detection = await window.faceapi
-        .detectSingleFace(frame, new window.faceapi.TinyFaceDetectorOptions())
-        .withFaceLandmarks();
-      if (!detection || !detection.landmarks) continue;
-      const landmarks = detection.landmarks.positions;
-      const leftEAR = getEAR(landmarks, true);
-      const rightEAR = getEAR(landmarks, false);
-      const ear = (leftEAR + rightEAR) / 2;
-      // Typical threshold: closed if EAR < 0.22
-      if (ear < 0.22) {
-        closedCount++;
-        if (lastState === 'open') blinked = true;
-        lastState = 'closed';
-      } else {
-        openCount++;
-        lastState = 'open';
+    setLivenessProgress(0); // Reset progress
+    
+    try {
+      console.log('Loading face-api models...');
+      await loadFaceApiModels();
+      console.log('Face-api models loaded successfully');
+      
+      if (!videoRef.current) {
+        setLivenessError('Video not available. Please try again.');
+        return;
       }
-    }
-    if (blinked && closedCount > 1 && openCount > 1) {
-      setLivenessChecked(true);
-      setLivenessError('');
-    } else {
+      
+      const video = videoRef.current;
+      console.log('Video dimensions:', video.videoWidth, 'x', video.videoHeight);
+      
+      if (!video.videoWidth || !video.videoHeight) {
+        setLivenessError('Video not ready. Please wait a moment and try again.');
+        return;
+      }
+      
+      const frames = [];
+      // Capture frames for 1.5 seconds (every 50ms for faster detection)
+      for (let i = 0; i < 30; i++) {
+        await new Promise(res => setTimeout(res, 50));
+        setLivenessProgress((i + 1) * 3.33); // Update progress (0-100%)
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth || 640;
+        canvas.height = video.videoHeight || 480;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0);
+        frames.push(canvas);
+      }
+      
+      console.log('Captured', frames.length, 'frames for analysis');
+      
+      // Analyze frames for face detection failures (indicates blink)
+      let faceDetectedCount = 0;
+      let faceNotDetectedCount = 0;
+      let blinked = false;
+      let lastState = 'detected';
+      let confidenceValues = []; // Track detection confidence
+      
+      for (let i = 0; i < frames.length; i++) {
+        try {
+          const frame = frames[i];
+          console.log(`Analyzing frame ${i + 1}/${frames.length}...`);
+          
+          const detection = await window.faceapi
+            .detectSingleFace(frame, new window.faceapi.TinyFaceDetectorOptions())
+            .withFaceLandmarks();
+            
+          if (!detection || !detection.landmarks) {
+            console.log(`Frame ${i + 1} - NO FACE DETECTED (possible blink)`);
+            faceNotDetectedCount++;
+            confidenceValues.push(0); // No confidence when no face detected
+            if (lastState === 'detected') blinked = true;
+            lastState = 'not_detected';
+          } else {
+            console.log(`Frame ${i + 1} - Face detected`);
+            faceDetectedCount++;
+            confidenceValues.push(detection.detection.score || 1.0); // Track confidence score
+            lastState = 'detected';
+          }
+        } catch (error) {
+          console.error(`Error analyzing frame ${i + 1}:`, error);
+          faceNotDetectedCount++;
+        }
+      }
+      
+      console.log('Analysis complete:');
+      console.log('- Frames with face detected:', faceDetectedCount);
+      console.log('- Frames with NO face detected:', faceNotDetectedCount);
+      console.log('- Blinked:', blinked);
+      console.log('- Confidence values:', confidenceValues);
+      
+      // Check for confidence drops (indicates blink)
+      let confidenceDrops = 0;
+      for (let i = 1; i < confidenceValues.length; i++) {
+        if (confidenceValues[i] < confidenceValues[i-1] * 0.9) { // 10% drop in confidence (more sensitive)
+          confidenceDrops++;
+        }
+      }
+      console.log('- Confidence drops:', confidenceDrops);
+      
+      // Blink detected if we have both detected and not detected frames OR significant confidence drops
+      if ((blinked && faceDetectedCount > 3 && faceNotDetectedCount > 0) || confidenceDrops > 1) {
+        setLivenessChecked(true);
+        setLivenessError('');
+        setLivenessProgress(100); // Complete progress
+        console.log('Liveness check PASSED - blink detected via face detection failure!');
+      } else {
+        setLivenessChecked(false);
+        setLivenessError('No blink detected. Please blink clearly and try again.');
+        setLivenessProgress(0); // Reset progress
+        console.log('Liveness check FAILED - no blink detected');
+      }
+    } catch (error) {
+      console.error('Liveness check error:', error);
       setLivenessChecked(false);
-      setLivenessError('No blink detected. Please blink clearly and try again.');
+      setLivenessError('Error during liveness check. Please try again.');
+      setLivenessProgress(0); // Reset progress on error
     }
   };
 
@@ -591,12 +671,66 @@ function Dashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '1rem' }}>
             <video 
               ref={videoRef} 
-              style={{ width: 220, height: 220, borderRadius: '50%', objectFit: 'cover', background: '#222' }}
+              style={{ width: 220, height: 220, borderRadius: '50%', objectFit: 'cover', background: '#222', transform: 'scaleX(1)' }}
               autoPlay
               playsInline
             />
+            <button className="landing-btn" onClick={testFaceApi} style={{marginTop: '1rem'}}>
+              Test Face API
+            </button>
             <button className="landing-btn" onClick={runLivenessCheck} style={{marginTop: '1rem'}} disabled={livenessChecked}>
               {livenessChecked ? 'Liveness Check Passed (Blink Detected)' : 'Start Liveness Check (Blink)'}
+            </button>
+            {livenessProgress > 0 && livenessProgress < 100 && (
+              <div style={{marginTop: '1rem', width: '100%', maxWidth: '300px'}}>
+                <div style={{
+                  width: '100%',
+                  height: '8px',
+                  backgroundColor: '#333',
+                  borderRadius: '4px',
+                  overflow: 'hidden'
+                }}>
+                  <div style={{
+                    width: `${livenessProgress}%`,
+                    height: '100%',
+                    backgroundColor: '#61dafb',
+                    transition: 'width 0.1s ease'
+                  }} />
+                </div>
+                <div style={{marginTop: '4px', fontSize: '12px', color: '#61dafb'}}>
+                  Analyzing... {Math.round(livenessProgress)}%
+                </div>
+              </div>
+            )}
+            <button className="landing-btn" onClick={() => {
+              console.log('Testing with eyes closed...');
+              console.log('Please close your eyes completely and click this button again in 3 seconds');
+              
+              setTimeout(() => {
+                if (videoRef.current) {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = videoRef.current.videoWidth;
+                  canvas.height = videoRef.current.videoHeight;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(videoRef.current, 0, 0);
+                  
+                  window.faceapi.detectSingleFace(canvas, new window.faceapi.TinyFaceDetectorOptions())
+                    .withFaceLandmarks()
+                    .then(detection => {
+                      if (detection && detection.landmarks) {
+                        const landmarks = detection.landmarks.positions;
+                        const leftEAR = getEAR(landmarks, true);
+                        const rightEAR = getEAR(landmarks, false);
+                        const ear = (leftEAR + rightEAR) / 2;
+                        console.log('EAR with eyes CLOSED:', ear);
+                        console.log('Left EAR:', leftEAR);
+                        console.log('Right EAR:', rightEAR);
+                      }
+                    });
+                }
+              }, 3000);
+            }} style={{marginTop: '1rem'}}>
+              Test Eyes Closed
             </button>
             {livenessError && <div style={{ color: '#ff6b6b', marginTop: 8 }}>{livenessError}</div>}
             <button className="landing-btn" onClick={capturePhoto} style={{marginTop: '1rem'}} disabled={!livenessChecked}>

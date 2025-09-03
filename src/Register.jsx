@@ -352,7 +352,7 @@ function Register() {
         {cameraError && <div style={{ color: '#ff6b6b', marginBottom: 8 }}>{cameraError}</div>}
         {showCamera && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '1rem' }}>
-            <video ref={videoRef} style={{ width: 220, height: 220, borderRadius: '50%', objectFit: 'cover', background: '#222' }} />
+            <video ref={videoRef} style={{ width: 220, height: 220, borderRadius: '50%', objectFit: 'cover', background: '#222', transform: 'scaleX(1)' }} />
             <button type="button" className="landing-btn" onClick={capturePhoto} style={{marginTop: '1rem'}}>Capture Photo</button>
             <canvas ref={canvasRef} style={{ display: 'none' }} />
           </div>

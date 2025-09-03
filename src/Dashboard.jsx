@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import './App.css';
 import { db } from './firebase';
 import { collection, addDoc, Timestamp, query, where, getDocs, orderBy, limit, updateDoc } from 'firebase/firestore';
+import { loadFaceApiModels, getFaceDescriptor, compareFaceDescriptors } from './faceApiUtils';
 
 function Dashboard() {
   const [user, setUser] = useState(null);
@@ -20,6 +21,8 @@ function Dashboard() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   let stream = useRef(null);
+  const [livenessChecked, setLivenessChecked] = useState(false);
+  const [livenessError, setLivenessError] = useState('');
 
   useEffect(() => {
     // Get user data from localStorage
@@ -104,10 +107,73 @@ function Dashboard() {
     window.location.href = '/';
   };
 
+  // Helper for EAR (eye aspect ratio)
+  function getEAR(landmarks, left=true) {
+    // 36-41: left eye, 42-47: right eye
+    const idx = left ? 36 : 42;
+    const p = landmarks.slice(idx, idx+6);
+    const dist = (a, b) => Math.hypot(a.x-b.x, a.y-b.y);
+    return (
+      (dist(p[1], p[5]) + dist(p[2], p[4])) / (2.0 * dist(p[0], p[3]))
+    );
+  }
+
+  // Liveness check: blink detection
+  const runLivenessCheck = async () => {
+    setLivenessError('');
+    await loadFaceApiModels();
+    if (!videoRef.current) {
+      setLivenessError('Video not available. Please try again.');
+      return;
+    }
+    const video = videoRef.current;
+    const frames = [];
+    // Capture frames for 2 seconds (every 100ms)
+    for (let i = 0; i < 20; i++) {
+      await new Promise(res => setTimeout(res, 100));
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      frames.push(canvas);
+    }
+    // Analyze EAR for each frame
+    let openCount = 0, closedCount = 0, blinked = false;
+    let lastState = 'open';
+    for (const frame of frames) {
+      const detection = await window.faceapi
+        .detectSingleFace(frame, new window.faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks();
+      if (!detection || !detection.landmarks) continue;
+      const landmarks = detection.landmarks.positions;
+      const leftEAR = getEAR(landmarks, true);
+      const rightEAR = getEAR(landmarks, false);
+      const ear = (leftEAR + rightEAR) / 2;
+      // Typical threshold: closed if EAR < 0.22
+      if (ear < 0.22) {
+        closedCount++;
+        if (lastState === 'open') blinked = true;
+        lastState = 'closed';
+      } else {
+        openCount++;
+        lastState = 'open';
+      }
+    }
+    if (blinked && closedCount > 1 && openCount > 1) {
+      setLivenessChecked(true);
+      setLivenessError('');
+    } else {
+      setLivenessChecked(false);
+      setLivenessError('No blink detected. Please blink clearly and try again.');
+    }
+  };
+
   const openCamera = async (type) => {
     setAttendanceType(type);
     setCameraError('');
     setShowCamera(true);
+    setLivenessChecked(false);
+    setLivenessError('');
     try {
       stream.current = await navigator.mediaDevices.getUserMedia({ video: true });
       if (videoRef.current) {
@@ -180,12 +246,11 @@ function Dashboard() {
             console.log(`Attempt ${attempts + 1} - Accuracy:`, position.coords.accuracy, 'meters');
             
             // Only accept if accuracy is good (less than 50 meters)
-            if (position.coords.accuracy <= 50) {
+            if (position.coords.accuracy <= 100) {
               currentLocation = {
                 lat: Math.round(position.coords.latitude * 1000000) / 1000000,
-                lng: Math.round(position.coords.longitude * 1000000) / 1000000
+                lng: Math.round(position.coords.longitude * 1000000) / 1000000,
               };
-              console.log('Good accuracy achieved, using this location');
               break;
             } else {
               console.log(`Accuracy too poor (${position.coords.accuracy}m), trying again...`);
@@ -233,13 +298,21 @@ function Dashboard() {
         console.log('Current location:', currentLocation);
       }
       
-      // Verify face (simple comparison - in production use proper face recognition)
-      const capturedImage = canvas.toDataURL('image/jpeg');
-      console.log('Captured image length:', capturedImage.length);
-      
-      const isFaceMatch = await verifyFace(capturedImage, user.imageUrl);
-      console.log('Face match result:', isFaceMatch);
-      
+      // --- FACE RECOGNITION ---
+      await loadFaceApiModels();
+      const img = new Image();
+      img.src = canvas.toDataURL('image/jpeg');
+      await new Promise((resolve) => { img.onload = resolve; });
+      const capturedDescriptor = await getFaceDescriptor(img);
+      if (!capturedDescriptor) {
+        showPopupMessage('No face detected or face not clear. Please try again.', 'error');
+        return;
+      }
+      if (!user.faceDescriptor) {
+        showPopupMessage('No reference face found. Please contact admin.', 'error');
+        return;
+      }
+      const isFaceMatch = compareFaceDescriptors(capturedDescriptor, user.faceDescriptor);
       if (!isFaceMatch) {
         showPopupMessage('Face verification failed. Please try again.', 'error');
         return;
@@ -266,36 +339,6 @@ function Dashboard() {
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 
     return R * c; // Distance in meters
-  };
-
-  const verifyFace = async (capturedImage, registeredImage) => {
-    // Enhanced face verification
-    if (!capturedImage || !registeredImage) {
-      return false;
-    }
-    
-    // Simple image comparison (in production, use proper face recognition API like AWS Rekognition, Azure Face API, or Google Vision)
-    // For now, we'll do a basic check by comparing image sizes and basic properties
-    try {
-      const capturedImg = new Image();
-      const registeredImg = new Image();
-      
-      return new Promise((resolve) => {
-        capturedImg.onload = () => {
-          registeredImg.onload = () => {
-            // Basic comparison - in production, use proper face recognition
-            const isMatch = Math.abs(capturedImg.width - registeredImg.width) < 50 && 
-                           Math.abs(capturedImg.height - registeredImg.height) < 50;
-            resolve(isMatch);
-          };
-          registeredImg.src = registeredImage;
-        };
-        capturedImg.src = capturedImage;
-      });
-    } catch (error) {
-      console.error('Face verification error:', error);
-      return false;
-    }
   };
 
   const showPopupMessage = (message, type) => {
@@ -552,7 +595,11 @@ function Dashboard() {
               autoPlay
               playsInline
             />
-            <button className="landing-btn" onClick={capturePhoto} style={{marginTop: '1rem'}}>
+            <button className="landing-btn" onClick={runLivenessCheck} style={{marginTop: '1rem'}} disabled={livenessChecked}>
+              {livenessChecked ? 'Liveness Check Passed (Blink Detected)' : 'Start Liveness Check (Blink)'}
+            </button>
+            {livenessError && <div style={{ color: '#ff6b6b', marginTop: 8 }}>{livenessError}</div>}
+            <button className="landing-btn" onClick={capturePhoto} style={{marginTop: '1rem'}} disabled={!livenessChecked}>
               Capture Photo
             </button>
             <canvas 

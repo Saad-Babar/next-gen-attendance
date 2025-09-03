@@ -3,6 +3,7 @@ import './App.css';
 import { db, storage } from './firebase';
 import { collection, addDoc, Timestamp, query, where, getDocs } from 'firebase/firestore';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { loadFaceApiModels, getFaceDescriptor } from './faceApiUtils';
 
 const BRANCHES = [
   'Head Office',
@@ -24,6 +25,7 @@ function Register() {
     image: null,
     imageUrl: '',
     location: null,
+    faceDescriptor: null,
   });
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState('');
@@ -68,15 +70,28 @@ function Register() {
     }
   };
 
-  const capturePhoto = () => {
+  const capturePhoto = async () => {
     if (videoRef.current && canvasRef.current) {
       const context = canvasRef.current.getContext('2d');
       canvasRef.current.width = videoRef.current.videoWidth;
       canvasRef.current.height = videoRef.current.videoHeight;
       context.drawImage(videoRef.current, 0, 0);
-      canvasRef.current.toBlob((blob) => {
+      canvasRef.current.toBlob(async (blob) => {
         const imageUrl = URL.createObjectURL(blob);
-        setForm((prev) => ({ ...prev, image: blob, imageUrl }));
+        // Load face-api models if not already loaded
+        await loadFaceApiModels();
+        // Create an image element for face-api
+        const img = new Image();
+        img.src = imageUrl;
+        img.onload = async () => {
+          const descriptor = await getFaceDescriptor(img);
+          if (!descriptor) {
+            alert('No face detected or face not clear. Please try again.');
+            setForm((prev) => ({ ...prev, image: null, imageUrl: '', faceDescriptor: null }));
+            return;
+          }
+          setForm((prev) => ({ ...prev, image: blob, imageUrl, faceDescriptor: descriptor }));
+        };
       }, 'image/jpeg');
       // Stop the camera
       if (stream.current) {
@@ -89,15 +104,13 @@ function Register() {
           (position) => {
             console.log('Registration - Raw GPS:', position.coords.latitude, position.coords.longitude);
             console.log('Registration - Accuracy:', position.coords.accuracy, 'meters');
-            // Only accept if accuracy is good (less than or equal to 50 meters)
-            if (position.coords.accuracy <= 50) {
+            // Only accept if accuracy is good (less than or equal to 100 meters)
+            if (position.coords.accuracy <= 100) {
               // Round coordinates to 6 decimal places for consistency
               const roundedLocation = {
                 lat: Math.round(position.coords.latitude * 1000000) / 1000000,
                 lng: Math.round(position.coords.longitude * 1000000) / 1000000,
               };
-              console.log('Registration - Accuracy:', position.coords.accuracy, 'meters');
-              console.log('Registration - Rounded GPS:', roundedLocation.lat, roundedLocation.lng);
               setForm((prev) => ({
                 ...prev,
                 location: roundedLocation,
@@ -141,6 +154,13 @@ function Register() {
     // Check if location was captured
     if (!form.location) {
       setSubmitError('Location not captured. Please capture your photo again to get location.');
+      setLoading(false);
+      return;
+    }
+    
+    // Check if face descriptor was captured
+    if (!form.faceDescriptor) {
+      setSubmitError('Face not detected. Please capture your photo again.');
       setLoading(false);
       return;
     }
@@ -195,6 +215,7 @@ function Register() {
         role: form.role,
         imageUrl: uploadedImageUrl,
         location: form.location,
+        faceDescriptor: form.faceDescriptor, // Store descriptor
         registeredAt: Timestamp.now(),
       });
       console.log('User saved with ID:', userDocRef.id);
@@ -211,6 +232,7 @@ function Register() {
         role: form.role,
         imageUrl: uploadedImageUrl,
         location: form.location,
+        faceDescriptor: form.faceDescriptor, // Store descriptor
         registeredAt: Timestamp.now(),
         totalCheckIns: 0,
         totalCheckOuts: 0,
@@ -231,6 +253,7 @@ function Register() {
         image: null,
         imageUrl: '',
         location: null,
+        faceDescriptor: null,
       });
       setPasswordError('');
     } catch (err) {

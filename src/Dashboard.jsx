@@ -26,6 +26,8 @@ function Dashboard() {
   const [livenessProgress, setLivenessProgress] = useState(0); // Add progress tracking
   const [showConfirmation, setShowConfirmation] = useState(false); // Add confirmation dialog
   const [pendingAttendanceType, setPendingAttendanceType] = useState(''); // Store pending attendance type
+  const [showSuccessScreen, setShowSuccessScreen] = useState(false); // Add success screen
+  const [successMessage, setSuccessMessage] = useState(''); // Store success message
 
   useEffect(() => {
     // Get user data from localStorage
@@ -484,6 +486,16 @@ function Dashboard() {
     return R * c; // Distance in meters
   };
 
+  const displaySuccessScreen = (message) => {
+    setSuccessMessage(message);
+    setShowSuccessScreen(true);
+    
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+      setShowSuccessScreen(false);
+    }, 3000);
+  };
+
   const showPopupMessage = (message, type) => {
     setPopupMessage(message);
     setPopupType(type);
@@ -617,6 +629,7 @@ function Dashboard() {
       }
 
       showPopupMessage(message, popupType);
+      displaySuccessScreen(message); // Show full-screen success
     } catch (error) {
       showPopupMessage('Failed to record attendance. Please try again.', 'error');
       console.error('Attendance error:', error);
@@ -738,6 +751,9 @@ function Dashboard() {
               autoPlay
               playsInline
             />
+            <div style={{ fontSize: '12px', color: '#61dafb', marginTop: '4px', textAlign: 'center' }}>
+              Camera shows real image (not mirrored)
+            </div>
             <button className="landing-btn" onClick={runLivenessCheck} style={{marginTop: '1rem'}} disabled={livenessChecked}>
               {livenessChecked ? 'Liveness Check Passed (Blink Detected)' : 'Start Liveness Check (Blink)'}
             </button>
@@ -898,6 +914,51 @@ function Dashboard() {
                   Yes, Proceed
                 </button>
               </div>
+            </div>
+          </div>
+        )}
+        
+        {/* Success Screen */}
+        {showSuccessScreen && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 255, 0, 0.95)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 2000,
+            animation: 'fadeInOut 8s ease-in-out'
+          }}>
+            <div style={{
+              textAlign: 'center',
+              color: '#fff',
+              textShadow: '2px 2px 4px rgba(0,0,0,0.5)'
+            }}>
+              <div style={{
+                fontSize: '4rem',
+                marginBottom: '1rem',
+                animation: 'bounce 1s ease-in-out'
+              }}>
+                ✅
+              </div>
+              <h1 style={{
+                fontSize: '2.5rem',
+                marginBottom: '1rem',
+                fontWeight: 'bold'
+              }}>
+                SUCCESS!
+              </h1>
+              <p style={{
+                fontSize: '1.2rem',
+                maxWidth: '500px',
+                lineHeight: '1.5'
+              }}>
+                {successMessage}
+              </p>
             </div>
           </div>
         )}

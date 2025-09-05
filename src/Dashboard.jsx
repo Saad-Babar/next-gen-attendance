@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import './App.css';
 import { db } from './firebase';
 import { collection, addDoc, Timestamp, query, where, getDocs, orderBy, limit, updateDoc } from 'firebase/firestore';
@@ -7,7 +8,7 @@ import { loadFaceApiModels, getFaceDescriptor, compareFaceDescriptors } from './
 function Dashboard() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [timeLeft, setTimeLeft] = useState(60); // 60 seconds countdown
+  const [timeLeft, setTimeLeft] = useState(300); // 5 minutes countdown
   const [showCamera, setShowCamera] = useState(false);
   const [cameraError, setCameraError] = useState('');
   const [attendanceType, setAttendanceType] = useState(''); // 'checkin' or 'checkout'
@@ -20,6 +21,7 @@ function Dashboard() {
   const intervalRef = useRef(null);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const serverTimeFetchedRef = useRef(false);
   let stream = useRef(null);
   const [livenessChecked, setLivenessChecked] = useState(false);
   const [livenessError, setLivenessError] = useState('');
@@ -28,6 +30,7 @@ function Dashboard() {
   const [pendingAttendanceType, setPendingAttendanceType] = useState(''); // Store pending attendance type
   const [showSuccessScreen, setShowSuccessScreen] = useState(false); // Add success screen
   const [successMessage, setSuccessMessage] = useState(''); // Store success message
+  const navigate = useNavigate();
 
   useEffect(() => {
     // Get user data from localStorage
@@ -41,15 +44,49 @@ function Dashboard() {
     fetchServerTime();
   }, []);
 
-  const fetchServerTime = async () => {
+  const fetchServerTime = async (retryCount = 0) => {
+    const maxRetries = 2;
+    
+    // Prevent multiple simultaneous calls
+    if (serverTimeFetchedRef.current || serverTime) {
+      console.log('Server time already fetched, skipping');
+      return;
+    }
+    
+    serverTimeFetchedRef.current = true;
+    
     try {
-      const response = await fetch('https://worldtimeapi.org/api/timezone/Asia/Karachi');
+      console.log(`Attempting to fetch server time from worldtimeapi.org... (attempt ${retryCount + 1})`);
+      const response = await fetch('https://worldtimeapi.org/api/timezone/Asia/Karachi', {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+        // Add timeout to prevent hanging
+        signal: AbortSignal.timeout(5000) // 5 second timeout
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
+      console.log('Server time fetched successfully:', data.datetime);
       setServerTime(new Date(data.datetime));
     } catch (error) {
-      console.error('Failed to fetch server time:', error);
-      // Fallback to local time if API fails
-      setServerTime(new Date());
+      console.warn(`Failed to fetch server time from API (attempt ${retryCount + 1}):`, error.message);
+      
+      // Retry if we haven't exceeded max retries
+      if (retryCount < maxRetries) {
+        console.log(`Retrying in 2 seconds... (${retryCount + 1}/${maxRetries})`);
+        setTimeout(() => {
+          fetchServerTime(retryCount + 1);
+        }, 2000);
+      } else {
+        console.log('Max retries reached, using local time as fallback');
+        // Fallback to local time if API fails after all retries
+        setServerTime(new Date());
+      }
     }
   };
 
@@ -63,7 +100,7 @@ function Dashboard() {
       if (intervalRef.current) clearInterval(intervalRef.current);
       
       // Reset countdown
-      setTimeLeft(60);
+      setTimeLeft(300);
       
       // Start countdown interval
       intervalRef.current = setInterval(() => {
@@ -79,7 +116,7 @@ function Dashboard() {
       // Set auto-logout timeout
       timeoutRef.current = setTimeout(() => {
         handleLogout();
-      }, 60000); // 60 seconds
+      }, 300000); // 5 minutes (300 seconds)
     };
 
     // Activity event listeners
@@ -109,7 +146,7 @@ function Dashboard() {
 
   const handleLogout = () => {
     localStorage.removeItem('currentUser');
-    window.location.href = '/';
+    navigate('/');
   };
 
   // Helper for EAR (eye aspect ratio)
@@ -652,7 +689,7 @@ function Dashboard() {
         <div className="landing-header">
           <h1>Access Denied</h1>
           <p className="landing-description">Please login to access your dashboard.</p>
-          <button className="landing-btn" onClick={() => window.location.href = '/login'}>
+          <button className="landing-btn" onClick={() => navigate('/login')}>
             Go to Login
           </button>
         </div>
@@ -675,7 +712,7 @@ function Dashboard() {
         </div>
       </div>
       
-      <div className="auth-form" style={{ maxWidth: '500px', margin: '0 auto' }}>
+      <div className="auth-form" style={{ maxWidth: '500px', margin: '0 auto', padding: '1rem' }}>
         <div style={{ 
           background: 'rgba(255,255,255,0.1)', 
           padding: '1.5rem', 
@@ -734,12 +771,22 @@ function Dashboard() {
           )}
         </div>
         
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '1rem' }}>
-          <button className="landing-btn" onClick={() => openCamera('checkin')}>
-            Check In
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <button className="landing-btn" onClick={() => openCamera('checkin')} style={{ 
+            minWidth: '140px', 
+            minHeight: '50px', 
+            fontSize: '1.1rem',
+            padding: '1rem 1.5rem'
+          }}>
+            📱 Check In
           </button>
-          <button className="landing-btn" onClick={() => openCamera('checkout')}>
-            Check Out
+          <button className="landing-btn" onClick={() => openCamera('checkout')} style={{ 
+            minWidth: '140px', 
+            minHeight: '50px', 
+            fontSize: '1.1rem',
+            padding: '1rem 1.5rem'
+          }}>
+            📱 Check Out
           </button>
         </div>
         
@@ -747,15 +794,30 @@ function Dashboard() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '1rem' }}>
             <video 
               ref={videoRef} 
-              style={{ width: 220, height: 220, borderRadius: '50%', objectFit: 'cover', background: '#222', transform: 'scaleX(1)' }}
+              style={{ 
+                width: '280px', 
+                height: '280px', 
+                borderRadius: '50%', 
+                objectFit: 'cover', 
+                background: '#222', 
+                transform: 'scaleX(1)',
+                maxWidth: '90vw',
+                maxHeight: '90vw'
+              }}
               autoPlay
               playsInline
             />
             <div style={{ fontSize: '12px', color: '#61dafb', marginTop: '4px', textAlign: 'center' }}>
               Camera shows real image (not mirrored)
             </div>
-            <button className="landing-btn" onClick={runLivenessCheck} style={{marginTop: '1rem'}} disabled={livenessChecked}>
-              {livenessChecked ? 'Liveness Check Passed (Blink Detected)' : 'Start Liveness Check (Blink)'}
+            <button className="landing-btn" onClick={runLivenessCheck} style={{
+              marginTop: '1rem', 
+              minWidth: '200px', 
+              minHeight: '50px', 
+              fontSize: '1rem',
+              padding: '1rem 1.5rem'
+            }} disabled={livenessChecked}>
+              {livenessChecked ? '✅ Liveness Check Passed' : '👁️ Start Liveness Check (Blink)'}
             </button>
             {livenessProgress > 0 && livenessProgress < 100 && (
               <div style={{marginTop: '1rem', width: '100%', maxWidth: '300px'}}>
@@ -963,11 +1025,29 @@ function Dashboard() {
           </div>
         )}
         
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-          <button className="landing-btn" onClick={handleLogout}>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button className="landing-btn" onClick={() => navigate('/account')} style={{ 
+            minWidth: '120px', 
+            minHeight: '50px', 
+            fontSize: '1rem',
+            padding: '1rem 1.5rem'
+          }}>
+            📊 My Account
+          </button>
+          <button className="landing-btn" onClick={handleLogout} style={{ 
+            minWidth: '120px', 
+            minHeight: '50px', 
+            fontSize: '1rem',
+            padding: '1rem 1.5rem'
+          }}>
             Logout
           </button>
-          <button className="landing-btn" onClick={() => window.location.href = '/'}>
+          <button className="landing-btn" onClick={() => navigate('/')} style={{ 
+            minWidth: '120px', 
+            minHeight: '50px', 
+            fontSize: '1rem',
+            padding: '1rem 1.5rem'
+          }}>
             Home
           </button>
         </div>

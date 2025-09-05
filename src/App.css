@@ -5,6 +5,71 @@
   text-align: center;
 }
 
+/* Mobile Responsive Styles */
+@media (max-width: 768px) {
+  #root {
+    padding: 0.5rem !important;
+  }
+  
+  .landing-container {
+    padding: 0.5rem !important;
+    min-height: 100vh !important;
+  }
+  
+  .landing-header h1 {
+    font-size: 1.8rem !important;
+    margin-bottom: 0.5rem !important;
+  }
+  
+  .landing-description {
+    font-size: 0.9rem !important;
+    padding: 0 0.5rem !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  .auth-form {
+    padding: 0.5rem !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    z-index: 10 !important;
+    position: relative !important;
+  }
+  
+  .auth-form input {
+    z-index: 11 !important;
+    position: relative !important;
+  }
+  
+  .auth-form select {
+    z-index: 11 !important;
+    position: relative !important;
+  }
+  
+  .landing-btn {
+    font-size: 1.1rem !important;
+    padding: 1.2rem 2rem !important;
+    min-height: 60px !important;
+    min-width: 140px !important;
+    margin: 0.5rem !important;
+    z-index: 12 !important;
+    position: relative !important;
+  }
+  
+  /* Make profile details larger on mobile */
+  .auth-form div[style*="background: rgba(255,255,255,0.1)"] {
+    padding: 1rem !important;
+    margin-bottom: 1rem !important;
+  }
+  
+  /* Make video larger on mobile */
+  video {
+    width: 300px !important;
+    height: 300px !important;
+    max-width: 85vw !important;
+    max-height: 85vw !important;
+  }
+}
+
 .logo {
   height: 6em;
   padding: 1.5em;
@@ -156,6 +221,8 @@
   transition: background 0.2s, color 0.2s, transform 0.1s, box-shadow 0.2s;
   letter-spacing: 1px;
   text-shadow: 0 1px 8px #646cff99;
+  position: relative;
+  z-index: 12;
 }
 
 .landing-btn:hover {
@@ -197,6 +264,8 @@
   box-shadow: 0 2px 16px rgba(0,0,0,0.07);
   max-width: 350px;
   margin: 0 auto;
+  position: relative;
+  z-index: 10;
 }
 
 .auth-form input {
@@ -207,6 +276,8 @@
   background: #f9fafb;
   color: #213547;
   transition: border-color 0.2s;
+  position: relative;
+  z-index: 11;
 }
 
 .auth-form input:focus {
@@ -223,6 +294,8 @@
   color: #213547;
   transition: border-color 0.2s;
   margin-bottom: 0.5rem;
+  position: relative;
+  z-index: 11;
 }
 .auth-form select:focus {
   border-color: #646cff;

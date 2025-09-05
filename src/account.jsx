@@ -254,7 +254,7 @@ function Account() {
                     <div><strong>Date:</strong> {formatDate(record.timestamp)}</div>
                     <div><strong>Time:</strong> {formatTime(record.timestamp)}</div>
                     {record.location && (
-                      <div><strong>Location:</strong> {record.location.lat}, {record.location.lng}</div>
+                      <div><strong>Location:</strong> {record.branch || 'Branch A'}</div>
                     )}
                   </div>
                 </div>

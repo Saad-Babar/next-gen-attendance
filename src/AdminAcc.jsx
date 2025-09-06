@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { collection, query, where, orderBy, getDocs, updateDoc, doc, getDoc } from 'firebase/firestore';
 import { db } from './firebase';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 function AdminAcc() {
   const [user, setUser] = useState(null);
@@ -191,120 +191,524 @@ function AdminAcc() {
 
   const fetchAttendanceData = async (startDate, endDate, branch) => {
     try {
+      // Fetch all attendance data to avoid index issues
       const attendanceRef = collection(db, 'attendance');
-      let q = query(
-        attendanceRef,
-        where('date', '>=', startDate),
-        where('date', '<=', endDate),
-        orderBy('date', 'desc')
-      );
-
-      if (branch !== 'all') {
-        q = query(
-          attendanceRef,
-          where('date', '>=', startDate),
-          where('date', '<=', endDate),
-          where('branch', '==', branch),
-          orderBy('date', 'desc')
-        );
-      }
-
+      const q = query(attendanceRef);
+      
       const querySnapshot = await getDocs(q);
-      return querySnapshot.docs.map(doc => ({
+      const allData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
+      
+      // Filter data in JavaScript
+      let filteredData = allData.filter(record => {
+        const recordDate = record.date;
+        return recordDate >= startDate && recordDate <= endDate;
+      });
+      
+      // Filter by branch if not 'all'
+      if (branch !== 'all') {
+        filteredData = filteredData.filter(record => record.branch === branch);
+      }
+      
+      // Sort the data in JavaScript
+      return filteredData.sort((a, b) => {
+        // Sort by date descending, then by branch
+        const dateCompare = new Date(b.date) - new Date(a.date);
+        if (dateCompare !== 0) return dateCompare;
+        return (a.branch || '').localeCompare(b.branch || '');
+      });
+      
     } catch (error) {
       console.error('Error fetching attendance data:', error);
       return [];
     }
   };
 
-  const generateSummaryReport = (attendanceData, branch) => {
+  const getLogoAsBase64 = async () => {
+    try {
+      // Create a canvas to convert SVG to PNG
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = 200;
+      canvas.height = 200;
+      
+      // Create an image element
+      const img = new Image();
+      
+      return new Promise((resolve) => {
+        img.onload = () => {
+          // Draw the PNG to canvas with better quality
+          ctx.drawImage(img, 0, 0, 200, 200);
+          // Convert canvas to PNG base64
+          const pngBase64 = canvas.toDataURL('image/png');
+          resolve(pngBase64);
+        };
+        
+        img.onerror = () => {
+          console.error('Error loading SVG logo');
+          resolve(null);
+        };
+        
+        // Load the PNG (convert your SVG to PNG first)
+        img.src = '/Khas_Logo.png';
+      });
+    } catch (error) {
+      console.error('Error loading logo:', error);
+      return null;
+    }
+  };
+
+  const calculateSummaryStats = (attendanceData, branch) => {
+    const stats = {
+      branchWise: {},
+      overall: {
+        totalEmployees: 0,
+        presentDays: 0,
+        absentDays: 0,
+        lateComings: 0,
+        earlyLeaves: 0,
+        leavesApproved: 0,
+        overtimeHours: 0,
+        attendancePercentage: 0
+      }
+    };
+
+    // Get unique employees by branch
+    const employeesByBranch = {};
+    const allEmployees = new Set();
+
+    attendanceData.forEach(record => {
+      const branchName = record.branch || 'Unknown Branch';
+      if (!employeesByBranch[branchName]) {
+        employeesByBranch[branchName] = new Set();
+      }
+      employeesByBranch[branchName].add(record.empId);
+      allEmployees.add(record.empId);
+    });
+
+    // Calculate branch-wise stats
+    Object.entries(employeesByBranch).forEach(([branchName, employees]) => {
+      const branchRecords = attendanceData.filter(record => record.branch === branchName);
+      const checkIns = branchRecords.filter(record => record.type === 'checkin');
+      const checkOuts = branchRecords.filter(record => record.type === 'checkout');
+      
+      stats.branchWise[branchName] = {
+        totalEmployees: employees.size,
+        presentDays: checkIns.length,
+        absentDays: Math.max(0, employees.size * getWorkingDays() - checkIns.length),
+        lateComings: checkIns.filter(record => record.status === 'late').length,
+        earlyLeaves: checkOuts.filter(record => record.status === 'early').length,
+        leavesApproved: 0, // Placeholder - would need leave data
+        overtimeHours: calculateOvertimeHours(checkIns, checkOuts),
+        attendancePercentage: employees.size > 0 ? (checkIns.length / (employees.size * getWorkingDays())) * 100 : 0
+      };
+    });
+
+    // Calculate overall stats
+    const totalCheckIns = attendanceData.filter(record => record.type === 'checkin').length;
+    const totalCheckOuts = attendanceData.filter(record => record.type === 'checkout').length;
+    const totalLateComings = attendanceData.filter(record => record.type === 'checkin' && record.status === 'late').length;
+    const totalEarlyLeaves = attendanceData.filter(record => record.type === 'checkout' && record.status === 'early').length;
+
+    stats.overall = {
+      totalEmployees: allEmployees.size,
+      presentDays: totalCheckIns,
+      absentDays: Math.max(0, allEmployees.size * getWorkingDays() - totalCheckIns),
+      lateComings: totalLateComings,
+      earlyLeaves: totalEarlyLeaves,
+      leavesApproved: 0, // Placeholder
+      overtimeHours: calculateOvertimeHours(
+        attendanceData.filter(record => record.type === 'checkin'),
+        attendanceData.filter(record => record.type === 'checkout')
+      ),
+      attendancePercentage: allEmployees.size > 0 ? (totalCheckIns / (allEmployees.size * getWorkingDays())) * 100 : 0
+    };
+
+    return stats;
+  };
+
+  const getWorkingDays = () => {
+    // Calculate working days between start and end date
+    const start = new Date(reportStartDate);
+    const end = new Date(reportEndDate);
+    let workingDays = 0;
+    
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() !== 0 && d.getDay() !== 6) { // Exclude weekends
+        workingDays++;
+      }
+    }
+    
+    return Math.max(workingDays, 1); // At least 1 day
+  };
+
+  const calculateOvertimeHours = (checkIns, checkOuts) => {
+    // Simple overtime calculation - can be enhanced based on business rules
+    let totalOvertime = 0;
+    
+    checkIns.forEach(checkIn => {
+      const checkOut = checkOuts.find(co => 
+        co.empId === checkIn.empId && 
+        co.date === checkIn.date
+      );
+      
+      if (checkOut) {
+        const inTime = new Date(checkIn.timestamp.seconds * 1000);
+        const outTime = new Date(checkOut.timestamp.seconds * 1000);
+        const hoursWorked = (outTime - inTime) / (1000 * 60 * 60);
+        
+        // Assuming 8 hours is standard work day
+        if (hoursWorked > 8) {
+          totalOvertime += hoursWorked - 8;
+        }
+      }
+    });
+    
+    return Math.round(totalOvertime * 10) / 10; // Round to 1 decimal
+  };
+
+  const generateSummaryReport = async (attendanceData, branch) => {
     const doc = new jsPDF();
     
-    // Title
-    doc.setFontSize(20);
-    doc.text('Attendance Summary Report', 20, 20);
+    // Set font to Calibri (fallback to Arial)
+    doc.setFont('helvetica', 'normal');
     
-    // Report details
-    doc.setFontSize(12);
-    doc.text(`Branch: ${branch === 'all' ? 'All Branches' : branch}`, 20, 35);
-    doc.text(`Date Range: ${reportStartDate} to ${reportEndDate}`, 20, 45);
-    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 55);
+    // HEADER SECTION
+    // Company Logo
+    try {
+      const logoBase64 = await getLogoAsBase64();
+      if (logoBase64) {
+        doc.addImage(logoBase64, 'PNG', 20, 10, 40, 25);
+      } else {
+        throw new Error('Logo not found');
+      }
+    } catch (error) {
+      // Fallback to text if logo not found
+      doc.setFontSize(16);
+      doc.setTextColor(0, 0, 0);
+      doc.text('KHAS', 20, 25);
+      doc.setFontSize(12);
+      doc.setTextColor(100, 100, 100);
+      doc.text('ATTENDANCE SYSTEM', 20, 35);
+    }
     
-    // Summary statistics
-    const totalRecords = attendanceData.length;
-    const checkIns = attendanceData.filter(record => record.type === 'checkin').length;
-    const checkOuts = attendanceData.filter(record => record.type === 'checkout').length;
-    const onTime = attendanceData.filter(record => record.status === 'on_time').length;
-    const late = attendanceData.filter(record => record.status === 'late').length;
-    const early = attendanceData.filter(record => record.status === 'early').length;
+    // Report Title - positioned below logo
+    doc.setFontSize(18);
+    doc.setTextColor(0, 0, 0);
+    doc.text('ATTENDANCE SUMMARY REPORT', 20, 45);
     
-    doc.text(`Total Records: ${totalRecords}`, 20, 75);
-    doc.text(`Check-ins: ${checkIns}`, 20, 85);
-    doc.text(`Check-outs: ${checkOuts}`, 20, 95);
-    doc.text(`On Time: ${onTime}`, 20, 105);
-    doc.text(`Late: ${late}`, 20, 115);
-    doc.text(`Early: ${early}`, 20, 125);
+    // Report Details - positioned below title
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Branch: ${branch === 'all' ? 'All Branches (Overall Pakistan)' : branch}`, 20, 60);
+    doc.text(`Date Range: ${reportStartDate} to ${reportEndDate}`, 20, 68);
+    doc.text(`Generated: ${new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}`, 20, 76);
     
-    // Branch-wise summary if all branches
+    // Calculate comprehensive statistics
+    const stats = calculateSummaryStats(attendanceData, branch);
+    
+    // TABLE FORMAT - Summary Statistics
+    const summaryData = [
+      ['Branch Name', 'Total Employees', 'Present Days', 'Absent Days', 'Late Comings', 'Early Leaves', 'Leaves Approved', 'Overtime Hours', 'Attendance %']
+    ];
+    
     if (branch === 'all') {
-      const branchSummary = {};
-      attendanceData.forEach(record => {
-        if (!branchSummary[record.branch]) {
-          branchSummary[record.branch] = { total: 0, checkins: 0, checkouts: 0 };
-        }
-        branchSummary[record.branch].total++;
-        if (record.type === 'checkin') branchSummary[record.branch].checkins++;
-        if (record.type === 'checkout') branchSummary[record.branch].checkouts++;
+      // Branch-wise data
+      Object.entries(stats.branchWise).forEach(([branchName, data]) => {
+        summaryData.push([
+          branchName,
+          data.totalEmployees.toString(),
+          data.presentDays.toString(),
+          data.absentDays.toString(),
+          data.lateComings.toString(),
+          data.earlyLeaves.toString(),
+          data.leavesApproved.toString(),
+          data.overtimeHours.toString(),
+          `${data.attendancePercentage.toFixed(1)}%`
+        ]);
       });
       
-      doc.text('Branch-wise Summary:', 20, 145);
-      let yPos = 155;
-      Object.entries(branchSummary).forEach(([branchName, data]) => {
-        doc.text(`${branchName}: ${data.total} records (${data.checkins} check-ins, ${data.checkouts} check-outs)`, 30, yPos);
-        yPos += 10;
-      });
+      // Overall totals
+      summaryData.push([
+        'TOTAL (All Branches)',
+        stats.overall.totalEmployees.toString(),
+        stats.overall.presentDays.toString(),
+        stats.overall.absentDays.toString(),
+        stats.overall.lateComings.toString(),
+        stats.overall.earlyLeaves.toString(),
+        stats.overall.leavesApproved.toString(),
+        stats.overall.overtimeHours.toString(),
+        `${stats.overall.attendancePercentage.toFixed(1)}%`
+      ]);
+    } else {
+      // Single branch data
+      summaryData.push([
+        branch,
+        stats.overall.totalEmployees.toString(),
+        stats.overall.presentDays.toString(),
+        stats.overall.absentDays.toString(),
+        stats.overall.lateComings.toString(),
+        stats.overall.earlyLeaves.toString(),
+        stats.overall.leavesApproved.toString(),
+        stats.overall.overtimeHours.toString(),
+        `${stats.overall.attendancePercentage.toFixed(1)}%`
+      ]);
     }
+    
+    // Add table - positioned below report details
+    autoTable(doc, {
+      head: [summaryData[0]],
+      body: summaryData.slice(1),
+      startY: 90,
+      styles: { 
+        fontSize: 9,
+        font: 'helvetica',
+        cellPadding: 3
+      },
+      headStyles: { 
+        fillColor: [97, 218, 251],
+        textColor: [0, 0, 0],
+        fontStyle: 'bold'
+      },
+      alternateRowStyles: {
+        fillColor: [245, 245, 245]
+      },
+      columnStyles: {
+        0: { halign: 'left' },   // Branch Name
+        1: { halign: 'center' }, // Total Employees
+        2: { halign: 'center' }, // Present Days
+        3: { halign: 'center' }, // Absent Days
+        4: { halign: 'center' }, // Late Comings
+        5: { halign: 'center' }, // Early Leaves
+        6: { halign: 'center' }, // Leaves Approved
+        7: { halign: 'center' }, // Overtime Hours
+        8: { halign: 'center' }   // Attendance %
+      }
+    });
+    
+    // FOOTER SECTION
+    const pageHeight = doc.internal.pageSize.height;
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Prepared by: _________________', 20, pageHeight - 30);
+    doc.text('Verified by: _________________', 20, pageHeight - 20);
+    doc.text(`Page 1 of 1`, 180, pageHeight - 20);
     
     return doc;
   };
 
-  const generateDetailedReport = (attendanceData, branch) => {
+  const generateDetailedReport = async (attendanceData, branch) => {
     const doc = new jsPDF();
     
-    // Title
-    doc.setFontSize(20);
-    doc.text('Detailed Attendance Report', 20, 20);
+    // Set font to Calibri (fallback to Arial)
+    doc.setFont('helvetica', 'normal');
     
-    // Report details
-    doc.setFontSize(12);
-    doc.text(`Branch: ${branch === 'all' ? 'All Branches' : branch}`, 20, 35);
-    doc.text(`Date Range: ${reportStartDate} to ${reportEndDate}`, 20, 45);
-    doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 55);
+    // HEADER SECTION
+    // Company Logo
+    try {
+      const logoBase64 = await getLogoAsBase64();
+      if (logoBase64) {
+        doc.addImage(logoBase64, 'PNG', 20, 10, 40, 25);
+      } else {
+        throw new Error('Logo not found');
+      }
+    } catch (error) {
+      // Fallback to text if logo not found
+      doc.setFontSize(16);
+      doc.setTextColor(0, 0, 0);
+      doc.text('KHAS', 20, 25);
+      doc.setFontSize(12);
+      doc.setTextColor(100, 100, 100);
+      doc.text('ATTENDANCE SYSTEM', 20, 35);
+    }
     
-    // Prepare table data
-    const tableData = attendanceData.map(record => [
-      record.userName || 'N/A',
-      record.userEmail || 'N/A',
-      record.branch || 'N/A',
-      record.type === 'checkin' ? 'Check In' : 'Check Out',
-      record.status === 'on_time' ? 'On Time' : record.status === 'late' ? 'Late' : 'Early',
-      record.date || 'N/A',
-      record.timestamp ? new Date(record.timestamp.seconds * 1000).toLocaleTimeString() : 'N/A'
-    ]);
+    // Report Title - positioned below logo
+    doc.setFontSize(18);
+    doc.setTextColor(0, 0, 0);
+    doc.text('DETAILED ATTENDANCE REPORT', 20, 45);
     
-    // Add table
-    doc.autoTable({
-      head: [['Name', 'Email', 'Branch', 'Type', 'Status', 'Date', 'Time']],
-      body: tableData,
-      startY: 75,
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [97, 218, 251] }
+    // Report Details - positioned below title
+    doc.setFontSize(10);
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Branch: ${branch === 'all' ? 'All Branches' : branch}`, 20, 60);
+    doc.text(`Date Range: ${reportStartDate} to ${reportEndDate}`, 20, 68);
+    doc.text(`Generated: ${new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}`, 20, 76);
+    
+    // Group data by employee for detailed view
+    const employeeData = groupAttendanceByEmployee(attendanceData);
+    
+    let currentY = 90;
+    let pageNumber = 1;
+    
+    // Process each employee
+    Object.entries(employeeData).forEach(([empId, empInfo]) => {
+      // Check if we need a new page
+      if (currentY > 250) {
+        doc.addPage();
+        pageNumber++;
+        currentY = 20;
+      }
+      
+      // Employee Details Section
+      doc.setFontSize(12);
+      doc.setTextColor(0, 0, 0);
+      doc.text(`Employee Code/ID: ${empInfo.empId}`, 20, currentY);
+      currentY += 8;
+      doc.text(`Employee Name: ${empInfo.name}`, 20, currentY);
+      currentY += 8;
+      doc.text(`Department/Designation: ${empInfo.role}`, 20, currentY);
+      currentY += 8;
+      doc.text(`Branch: ${empInfo.branch}`, 20, currentY);
+      currentY += 15;
+      
+      // Daily Attendance Table
+      const tableData = empInfo.attendance.map(record => {
+        const checkInTime = record.checkIn ? new Date(record.checkIn.timestamp.seconds * 1000).toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi' }) : 'N/A';
+        const checkOutTime = record.checkOut ? new Date(record.checkOut.timestamp.seconds * 1000).toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi' }) : 'N/A';
+        const status = getAttendanceStatus(record);
+        const lateMinutes = calculateLateMinutes(record.checkIn);
+        const earlyMinutes = calculateEarlyMinutes(record.checkOut);
+        const overtimeHours = calculateDailyOvertime(record.checkIn, record.checkOut);
+        
+        return [
+          record.date,
+          '09:00 - 18:00', // Standard shift time
+          checkInTime,
+          checkOutTime,
+          status,
+          lateMinutes > 0 ? `${lateMinutes} min` : 'No',
+          earlyMinutes > 0 ? `${earlyMinutes} min` : 'No',
+          overtimeHours > 0 ? `${overtimeHours}h` : '0h'
+        ];
+      });
+      
+      // Add table for this employee
+      autoTable(doc, {
+        head: [['Date', 'Shift Time', 'Actual Check-In', 'Actual Check-Out', 'Status', 'Late', 'Early Leave', 'Overtime']],
+        body: tableData,
+        startY: currentY,
+        styles: { 
+          fontSize: 8,
+          font: 'helvetica',
+          cellPadding: 2
+        },
+        headStyles: { 
+          fillColor: [97, 218, 251],
+          textColor: [0, 0, 0],
+          fontStyle: 'bold'
+        },
+        alternateRowStyles: {
+          fillColor: [245, 245, 245]
+        },
+        columnStyles: {
+          0: { halign: 'center' }, // Date
+          1: { halign: 'center' }, // Shift Time
+          2: { halign: 'center' }, // Check-In
+          3: { halign: 'center' }, // Check-Out
+          4: { halign: 'center' }, // Status
+          5: { halign: 'center' }, // Late
+          6: { halign: 'center' }, // Early Leave
+          7: { halign: 'center' }   // Overtime
+        }
+      });
+      
+      currentY = doc.lastAutoTable.finalY + 20;
     });
     
+    // FOOTER SECTION
+    const pageHeight = doc.internal.pageSize.height;
+    doc.setFontSize(8);
+    doc.setTextColor(100, 100, 100);
+    doc.text('Prepared by: _________________', 20, pageHeight - 30);
+    doc.text('Verified by: _________________', 20, pageHeight - 20);
+    doc.text(`Page ${pageNumber} of ${pageNumber}`, 180, pageHeight - 20);
+    
     return doc;
+  };
+
+  const groupAttendanceByEmployee = (attendanceData) => {
+    const employeeData = {};
+    
+    attendanceData.forEach(record => {
+      const empId = record.empId;
+      
+      if (!employeeData[empId]) {
+        employeeData[empId] = {
+          empId: empId,
+          name: record.userName || 'N/A',
+          role: record.role || 'N/A',
+          branch: record.branch || 'N/A',
+          attendance: []
+        };
+      }
+      
+      // Find existing attendance record for this date
+      let attendanceRecord = employeeData[empId].attendance.find(att => att.date === record.date);
+      
+      if (!attendanceRecord) {
+        attendanceRecord = {
+          date: record.date,
+          checkIn: null,
+          checkOut: null
+        };
+        employeeData[empId].attendance.push(attendanceRecord);
+      }
+      
+      // Add check-in or check-out
+      if (record.type === 'checkin') {
+        attendanceRecord.checkIn = record;
+      } else if (record.type === 'checkout') {
+        attendanceRecord.checkOut = record;
+      }
+    });
+    
+    // Sort attendance by date
+    Object.values(employeeData).forEach(emp => {
+      emp.attendance.sort((a, b) => new Date(a.date) - new Date(b.date));
+    });
+    
+    return employeeData;
+  };
+
+  const getAttendanceStatus = (record) => {
+    if (!record.checkIn) return 'Absent';
+    if (record.checkIn.status === 'late') return 'Late';
+    if (record.checkOut && record.checkOut.status === 'early') return 'Early Leave';
+    return 'Present';
+  };
+
+  const calculateLateMinutes = (checkIn) => {
+    if (!checkIn || checkIn.status !== 'late') return 0;
+    
+    const checkInTime = new Date(checkIn.timestamp.seconds * 1000);
+    const standardTime = new Date(checkInTime);
+    standardTime.setHours(9, 0, 0, 0); // 9:00 AM
+    
+    return Math.max(0, Math.round((checkInTime - standardTime) / (1000 * 60)));
+  };
+
+  const calculateEarlyMinutes = (checkOut) => {
+    if (!checkOut || checkOut.status !== 'early') return 0;
+    
+    const checkOutTime = new Date(checkOut.timestamp.seconds * 1000);
+    const standardTime = new Date(checkOutTime);
+    standardTime.setHours(18, 0, 0, 0); // 6:00 PM
+    
+    return Math.max(0, Math.round((standardTime - checkOutTime) / (1000 * 60)));
+  };
+
+  const calculateDailyOvertime = (checkIn, checkOut) => {
+    if (!checkIn || !checkOut) return 0;
+    
+    const inTime = new Date(checkIn.timestamp.seconds * 1000);
+    const outTime = new Date(checkOut.timestamp.seconds * 1000);
+    const hoursWorked = (outTime - inTime) / (1000 * 60 * 60);
+    
+    // Assuming 8 hours is standard work day
+    const overtime = Math.max(0, hoursWorked - 8);
+    return Math.round(overtime * 10) / 10; // Round to 1 decimal
   };
 
   const openReportModal = () => {
@@ -336,9 +740,9 @@ function AdminAcc() {
       
       let doc;
       if (reportType === 'summary') {
-        doc = generateSummaryReport(attendanceData, selectedBranch);
+        doc = await generateSummaryReport(attendanceData, selectedBranch);
       } else {
-        doc = generateDetailedReport(attendanceData, selectedBranch);
+        doc = await generateDetailedReport(attendanceData, selectedBranch);
       }
       
       // Generate filename

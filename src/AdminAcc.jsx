@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { collection, query, where, orderBy, getDocs, updateDoc, doc, getDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, getDocs, updateDoc, doc, getDoc, addDoc, Timestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -18,6 +18,8 @@ function AdminAcc() {
   const [reportType, setReportType] = useState('summary'); // 'summary' or 'detailed'
   const [availableBranches, setAvailableBranches] = useState([]);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [leaveApplications, setLeaveApplications] = useState([]);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -38,10 +40,11 @@ function AdminAcc() {
         return;
       }
       
-      // Load inactive users, all users, and branches
+      // Load inactive users, all users, branches, and leave applications
       loadInactiveUsers();
       loadAllUsers();
       loadAvailableBranches();
+      loadLeaveApplications();
     } else {
       navigate('/login');
     }
@@ -189,6 +192,79 @@ function AdminAcc() {
     }
   };
 
+  const loadLeaveApplications = async () => {
+    try {
+      const leaveRef = collection(db, 'leaveApplications');
+      const q = query(leaveRef, orderBy('appliedAt', 'desc'));
+      const querySnapshot = await getDocs(q);
+      
+      const applications = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      setLeaveApplications(applications);
+    } catch (error) {
+      console.error('Error loading leave applications:', error);
+    }
+  };
+
+  const approveLeave = async (applicationId, empId, leaveDate) => {
+    try {
+      // Update leave application status
+      const leaveRef = doc(db, 'leaveApplications', applicationId);
+      await updateDoc(leaveRef, { 
+        status: 'approved',
+        approvedAt: Timestamp.now(),
+        approvedBy: user.name
+      });
+
+      // Create attendance record for the leave day
+      const leaveDateObj = new Date(leaveDate);
+      const attendanceRecord = {
+        empId: empId,
+        userId: leaveApplications.find(app => app.id === applicationId)?.userId,
+        userEmail: leaveApplications.find(app => app.id === applicationId)?.userEmail,
+        userName: leaveApplications.find(app => app.id === applicationId)?.userName,
+        branch: leaveApplications.find(app => app.id === applicationId)?.branch,
+        role: leaveApplications.find(app => app.id === applicationId)?.role,
+        type: 'leave',
+        status: 'approved_leave',
+        timestamp: Timestamp.fromDate(leaveDateObj),
+        serverTime: leaveDateObj.toISOString(),
+        date: leaveDate,
+        leaveType: leaveApplications.find(app => app.id === applicationId)?.leaveType,
+        leaveReason: leaveApplications.find(app => app.id === applicationId)?.reason
+      };
+
+      await addDoc(collection(db, 'attendance'), attendanceRecord);
+      
+      // Reload leave applications
+      loadLeaveApplications();
+      alert('Leave approved successfully!');
+    } catch (error) {
+      console.error('Error approving leave:', error);
+      alert('Failed to approve leave. Please try again.');
+    }
+  };
+
+  const rejectLeave = async (applicationId) => {
+    try {
+      const leaveRef = doc(db, 'leaveApplications', applicationId);
+      await updateDoc(leaveRef, { 
+        status: 'rejected',
+        rejectedAt: Timestamp.now(),
+        rejectedBy: user.name
+      });
+      
+      loadLeaveApplications();
+      alert('Leave application rejected.');
+    } catch (error) {
+      console.error('Error rejecting leave:', error);
+      alert('Failed to reject leave. Please try again.');
+    }
+  };
+
   const fetchAttendanceData = async (startDate, endDate, branch) => {
     try {
       // Fetch all attendance data to avoid index issues
@@ -212,13 +288,31 @@ function AdminAcc() {
         filteredData = filteredData.filter(record => record.branch === branch);
       }
       
+      // Also fetch leave applications for the date range
+      const leaveRef = collection(db, 'leaveApplications');
+      const leaveQuery = query(leaveRef);
+      const leaveSnapshot = await getDocs(leaveQuery);
+      const leaveApplications = leaveSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+      // Filter approved leaves by date range
+      const approvedLeaves = leaveApplications.filter(leave => 
+        leave.status === 'approved' && 
+        leave.leaveDate >= startDate && 
+        leave.leaveDate <= endDate
+      );
+
       // Sort the data in JavaScript
-      return filteredData.sort((a, b) => {
+      const sortedData = filteredData.sort((a, b) => {
         // Sort by date descending, then by branch
         const dateCompare = new Date(b.date) - new Date(a.date);
         if (dateCompare !== 0) return dateCompare;
         return (a.branch || '').localeCompare(b.branch || '');
       });
+
+      return { attendanceData: sortedData, leaveData: approvedLeaves };
       
     } catch (error) {
       console.error('Error fetching attendance data:', error);
@@ -260,7 +354,7 @@ function AdminAcc() {
     }
   };
 
-  const calculateSummaryStats = (attendanceData, branch) => {
+  const calculateSummaryStats = (attendanceData, leaveData, branch) => {
     const stats = {
       branchWise: {},
       overall: {
@@ -288,6 +382,16 @@ function AdminAcc() {
       allEmployees.add(record.empId);
     });
 
+    // Count approved leaves by branch
+    const leavesByBranch = {};
+    leaveData.forEach(leave => {
+      const branchName = leave.branch || 'Unknown Branch';
+      if (!leavesByBranch[branchName]) {
+        leavesByBranch[branchName] = 0;
+      }
+      leavesByBranch[branchName]++;
+    });
+
     // Calculate branch-wise stats
     Object.entries(employeesByBranch).forEach(([branchName, employees]) => {
       const branchRecords = attendanceData.filter(record => record.branch === branchName);
@@ -300,7 +404,7 @@ function AdminAcc() {
         absentDays: Math.max(0, employees.size * getWorkingDays() - checkIns.length),
         lateComings: checkIns.filter(record => record.status === 'late').length,
         earlyLeaves: checkOuts.filter(record => record.status === 'early').length,
-        leavesApproved: 0, // Placeholder - would need leave data
+        leavesApproved: leavesByBranch[branchName] || 0,
         overtimeHours: calculateOvertimeHours(checkIns, checkOuts),
         attendancePercentage: employees.size > 0 ? (checkIns.length / (employees.size * getWorkingDays())) * 100 : 0
       };
@@ -318,7 +422,7 @@ function AdminAcc() {
       absentDays: Math.max(0, allEmployees.size * getWorkingDays() - totalCheckIns),
       lateComings: totalLateComings,
       earlyLeaves: totalEarlyLeaves,
-      leavesApproved: 0, // Placeholder
+      leavesApproved: leaveData.length,
       overtimeHours: calculateOvertimeHours(
         attendanceData.filter(record => record.type === 'checkin'),
         attendanceData.filter(record => record.type === 'checkout')
@@ -369,7 +473,7 @@ function AdminAcc() {
     return Math.round(totalOvertime * 10) / 10; // Round to 1 decimal
   };
 
-  const generateSummaryReport = async (attendanceData, branch) => {
+  const generateSummaryReport = async (attendanceData, leaveData, branch) => {
     const doc = new jsPDF();
     
     // Set font to Calibri (fallback to Arial)
@@ -407,7 +511,7 @@ function AdminAcc() {
     doc.text(`Generated: ${new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}`, 20, 76);
     
     // Calculate comprehensive statistics
-    const stats = calculateSummaryStats(attendanceData, branch);
+    const stats = calculateSummaryStats(attendanceData, leaveData, branch);
     
     // TABLE FORMAT - Summary Statistics
     const summaryData = [
@@ -499,7 +603,7 @@ function AdminAcc() {
     return doc;
   };
 
-  const generateDetailedReport = async (attendanceData, branch) => {
+  const generateDetailedReport = async (attendanceData, leaveData, branch) => {
     const doc = new jsPDF();
     
     // Set font to Calibri (fallback to Arial)
@@ -730,7 +834,7 @@ function AdminAcc() {
     setGeneratingReport(true);
     
     try {
-      const attendanceData = await fetchAttendanceData(reportStartDate, reportEndDate, selectedBranch);
+      const { attendanceData, leaveData } = await fetchAttendanceData(reportStartDate, reportEndDate, selectedBranch);
       
       if (attendanceData.length === 0) {
         alert('No attendance data found for the selected criteria.');
@@ -740,9 +844,9 @@ function AdminAcc() {
       
       let doc;
       if (reportType === 'summary') {
-        doc = await generateSummaryReport(attendanceData, selectedBranch);
+        doc = await generateSummaryReport(attendanceData, leaveData, selectedBranch);
       } else {
-        doc = await generateDetailedReport(attendanceData, selectedBranch);
+        doc = await generateDetailedReport(attendanceData, leaveData, selectedBranch);
       }
       
       // Generate filename
@@ -955,6 +1059,122 @@ function AdminAcc() {
               📄 Generate PDF Report
             </button>
           </div>
+        </div>
+
+        {/* Leave Applications Section */}
+        <div style={{ 
+          background: 'rgba(255,255,255,0.1)', 
+          padding: '1.5rem', 
+          borderRadius: '12px',
+          marginBottom: '1rem'
+        }}>
+          <h3 style={{ color: '#61dafb', marginBottom: '1rem', textAlign: 'center' }}>
+            Leave Applications ({leaveApplications.filter(app => app.status === 'pending').length} Pending)
+          </h3>
+          
+          {leaveApplications.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#61dafb', padding: '2rem' }}>
+              <p>No leave applications found.</p>
+            </div>
+          ) : (
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {leaveApplications.map((application) => (
+                <div key={application.id} style={{
+                  background: 'rgba(255,255,255,0.05)',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  marginBottom: '0.5rem',
+                  border: `2px solid ${
+                    application.status === 'pending' ? '#ffa726' :
+                    application.status === 'approved' ? '#4caf50' : '#f44336'
+                  }`,
+                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
+                        <strong style={{ color: '#61dafb' }}>{application.userName}</strong>
+                        <span style={{
+                          padding: '0.25rem 0.5rem',
+                          borderRadius: '12px',
+                          fontSize: '0.8rem',
+                          fontWeight: 'bold',
+                          backgroundColor: 
+                            application.status === 'pending' ? '#ffa726' :
+                            application.status === 'approved' ? '#4caf50' : '#f44336',
+                          color: '#fff'
+                        }}>
+                          {application.status.toUpperCase()}
+                        </span>
+                      </div>
+                      
+                      <div style={{ fontSize: '0.9rem', color: '#e0e7ff', marginBottom: '0.5rem' }}>
+                        <div><strong>Date:</strong> {new Date(application.leaveDate).toLocaleDateString()}</div>
+                        <div><strong>Type:</strong> {application.leaveType.charAt(0).toUpperCase() + application.leaveType.slice(1)} Leave</div>
+                        <div><strong>Branch:</strong> {application.branch}</div>
+                        <div><strong>Applied:</strong> {new Date(application.appliedAt.seconds * 1000).toLocaleDateString()}</div>
+                      </div>
+                      
+                      <div style={{ fontSize: '0.9rem', color: '#fff', marginBottom: '0.5rem' }}>
+                        <strong>Reason:</strong> {application.reason}
+                      </div>
+                      
+                      {application.status === 'approved' && application.approvedBy && (
+                        <div style={{ fontSize: '0.8rem', color: '#4caf50' }}>
+                          ✅ Approved by {application.approvedBy} on {new Date(application.approvedAt.seconds * 1000).toLocaleDateString()}
+                        </div>
+                      )}
+                      
+                      {application.status === 'rejected' && application.rejectedBy && (
+                        <div style={{ fontSize: '0.8rem', color: '#f44336' }}>
+                          ❌ Rejected by {application.rejectedBy} on {new Date(application.rejectedAt.seconds * 1000).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {application.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
+                        <button 
+                          className="landing-btn" 
+                          onClick={() => {
+                            if (window.confirm(`Approve leave for ${application.userName} on ${new Date(application.leaveDate).toLocaleDateString()}?`)) {
+                              approveLeave(application.id, application.empId, application.leaveDate);
+                            }
+                          }}
+                          style={{ 
+                            minWidth: '80px', 
+                            minHeight: '35px', 
+                            fontSize: '0.8rem',
+                            padding: '0.5rem',
+                            backgroundColor: '#4caf50'
+                          }}
+                        >
+                          ✅ Approve
+                        </button>
+                        <button 
+                          className="landing-btn" 
+                          onClick={() => {
+                            if (window.confirm(`Reject leave for ${application.userName}?`)) {
+                              rejectLeave(application.id);
+                            }
+                          }}
+                          style={{ 
+                            minWidth: '80px', 
+                            minHeight: '35px', 
+                            fontSize: '0.8rem',
+                            padding: '0.5rem',
+                            backgroundColor: '#f44336'
+                          }}
+                        >
+                          ❌ Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Navigation Buttons */}

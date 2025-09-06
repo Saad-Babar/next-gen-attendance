@@ -30,6 +30,11 @@ function Dashboard() {
   const [pendingAttendanceType, setPendingAttendanceType] = useState(''); // Store pending attendance type
   const [showSuccessScreen, setShowSuccessScreen] = useState(false); // Add success screen
   const [successMessage, setSuccessMessage] = useState(''); // Store success message
+  const [showLeaveModal, setShowLeaveModal] = useState(false); // Add leave application modal
+  const [leaveDate, setLeaveDate] = useState(''); // Leave date
+  const [leaveReason, setLeaveReason] = useState(''); // Leave reason
+  const [leaveType, setLeaveType] = useState('sick'); // Leave type
+  const [approvedLeaves, setApprovedLeaves] = useState([]); // Approved leave dates
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -57,7 +62,53 @@ function Dashboard() {
     
     // Get server time from third-party API
     fetchServerTime();
+    
+    // Load approved leaves for this user
+    loadApprovedLeaves();
   }, [navigate]);
+
+  // Reload leaves when user data is available
+  useEffect(() => {
+    if (user?.empId) {
+      loadApprovedLeaves();
+    }
+  }, [user?.empId]);
+
+  const loadApprovedLeaves = async () => {
+    if (!user?.empId) {
+      console.log('User empId not available yet, skipping leave loading');
+      return;
+    }
+    
+    try {
+      console.log('Loading approved leaves for empId:', user.empId);
+      const attendanceRef = collection(db, 'attendance');
+      const q = query(
+        attendanceRef,
+        where('empId', '==', user.empId),
+        where('type', '==', 'leave'),
+        where('status', '==', 'approved_leave')
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const leaves = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      console.log('Loaded approved leaves:', leaves);
+      setApprovedLeaves(leaves);
+    } catch (error) {
+      console.error('Error loading approved leaves:', error);
+    }
+  };
+
+  const isLeaveDay = (date) => {
+    const dateString = date instanceof Date ? date.toISOString().split('T')[0] : date;
+    const hasLeave = approvedLeaves.some(leave => leave.date === dateString);
+    console.log(`Checking leave for date ${dateString}:`, hasLeave, 'Available leaves:', approvedLeaves.map(l => l.date));
+    return hasLeave;
+  };
 
   const fetchServerTime = async (retryCount = 0) => {
     const maxRetries = 3;
@@ -344,6 +395,7 @@ function Dashboard() {
 
   const confirmAttendance = async () => {
     const type = pendingAttendanceType;
+    
     setShowConfirmation(false);
     setAttendanceType(type);
     setCameraError('');
@@ -601,6 +653,54 @@ function Dashboard() {
     }, 3000);
   };
 
+  const submitLeaveApplication = async () => {
+    if (!leaveDate || !leaveReason.trim()) {
+      showPopupMessage('Please fill in all required fields.', 'error');
+      return;
+    }
+
+    // Check if date is in the past
+    const selectedDate = new Date(leaveDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (selectedDate < today) {
+      showPopupMessage('Cannot apply for leave on past dates.', 'error');
+      return;
+    }
+
+    try {
+      const leaveApplication = {
+        empId: user.empId,
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        branch: user.branch,
+        role: user.role,
+        leaveDate: leaveDate,
+        leaveType: leaveType,
+        reason: leaveReason.trim(),
+        status: 'pending',
+        appliedAt: Timestamp.now(),
+        appliedDate: new Date().toISOString().split('T')[0]
+      };
+
+      await addDoc(collection(db, 'leaveApplications'), leaveApplication);
+      
+      showPopupMessage('Leave application submitted successfully! Admin will review your request.', 'success');
+      setShowLeaveModal(false);
+      setLeaveDate('');
+      setLeaveReason('');
+      setLeaveType('sick');
+      
+      // Refresh approved leaves in case this affects today
+      loadApprovedLeaves();
+    } catch (error) {
+      console.error('Error submitting leave application:', error);
+      showPopupMessage('Failed to submit leave application. Please try again.', 'error');
+    }
+  };
+
   const showPopupMessage = (message, type) => {
     setPopupMessage(message);
     setPopupType(type);
@@ -809,6 +909,20 @@ function Dashboard() {
       <div className="landing-header">
         <h1>Welcome, {user.name}!</h1>
         <p className="landing-description">Your attendance system dashboard</p>
+        {isLeaveDay(new Date().toISOString().split('T')[0]) && (
+          <div style={{ 
+            color: '#4caf50', 
+            fontSize: '1em', 
+            marginTop: '0.5rem',
+            fontWeight: 'bold',
+            backgroundColor: 'rgba(76, 175, 80, 0.2)',
+            padding: '0.5rem',
+            borderRadius: '8px',
+            border: '1px solid #4caf50'
+          }}>
+            🏠 You are on approved leave today
+          </div>
+        )}
         <div style={{ 
           color: timeLeft <= 10 ? '#ff6b6b' : '#61dafb', 
           fontSize: '0.9em', 
@@ -879,23 +993,65 @@ function Dashboard() {
         </div>
         
         <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', marginBottom: '1rem', flexWrap: 'wrap' }}>
-          <button className="landing-btn" onClick={() => openCamera('checkin')} style={{ 
-            minWidth: '140px', 
-            minHeight: '50px', 
-            fontSize: '1.1rem',
-            padding: '1rem 1.5rem'
-          }}>
+          <button 
+            className="landing-btn" 
+            onClick={() => openCamera('checkin')} 
+            disabled={isLeaveDay(new Date().toISOString().split('T')[0])}
+            style={{ 
+              minWidth: '140px', 
+              minHeight: '50px', 
+              fontSize: '1.1rem',
+              padding: '1rem 1.5rem',
+              opacity: isLeaveDay(new Date().toISOString().split('T')[0]) ? 0.5 : 1,
+              cursor: isLeaveDay(new Date().toISOString().split('T')[0]) ? 'not-allowed' : 'pointer'
+            }}
+          >
             📱 Check In
           </button>
-          <button className="landing-btn" onClick={() => openCamera('checkout')} style={{ 
+          <button 
+            className="landing-btn" 
+            onClick={() => openCamera('checkout')} 
+            disabled={isLeaveDay(new Date().toISOString().split('T')[0])}
+            style={{ 
+              minWidth: '140px', 
+              minHeight: '50px', 
+              fontSize: '1.1rem',
+              padding: '1rem 1.5rem',
+              opacity: isLeaveDay(new Date().toISOString().split('T')[0]) ? 0.5 : 1,
+              cursor: isLeaveDay(new Date().toISOString().split('T')[0]) ? 'not-allowed' : 'pointer'
+            }}
+          >
+            📱 Check Out
+          </button>
+          <button className="landing-btn" onClick={() => setShowLeaveModal(true)} style={{ 
             minWidth: '140px', 
             minHeight: '50px', 
             fontSize: '1.1rem',
-            padding: '1rem 1.5rem'
+            padding: '1rem 1.5rem',
+            backgroundColor: '#ffa726'
           }}>
-            📱 Check Out
+            🏠 Apply for Leave
           </button>
         </div>
+        
+        {/* Leave Day Notice */}
+        {isLeaveDay(new Date().toISOString().split('T')[0]) && (
+          <div style={{
+            background: 'rgba(76, 175, 80, 0.2)',
+            border: '2px solid #4caf50',
+            borderRadius: '8px',
+            padding: '1rem',
+            marginBottom: '1rem',
+            textAlign: 'center'
+          }}>
+            <div style={{ color: '#4caf50', fontSize: '1.2rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+              🏠 You are on approved leave today
+            </div>
+            <div style={{ color: '#e0e7ff', fontSize: '0.9rem' }}>
+              Check In/Check Out buttons are disabled for leave days
+            </div>
+          </div>
+        )}
         
         {showCamera && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '1rem' }}>
@@ -1087,6 +1243,137 @@ function Dashboard() {
           </div>
         )}
         
+        {/* Leave Application Modal */}
+        {showLeaveModal && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.8)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
+          }}>
+            <div style={{
+              background: 'linear-gradient(135deg, #61dafb 0%, #646cff 100%)',
+              padding: '2rem',
+              borderRadius: '12px',
+              maxWidth: '500px',
+              width: '90%',
+              textAlign: 'center',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+              border: '2px solid rgba(255,255,255,0.2)'
+            }}>
+              <h3 style={{ 
+                color: '#fff', 
+                marginBottom: '1.5rem',
+                fontSize: '1.5rem',
+                fontWeight: 'bold'
+              }}>
+                🏠 Apply for Leave
+              </h3>
+              
+              <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
+                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  Leave Date *
+                </label>
+                <input
+                  type="date"
+                  value={leaveDate}
+                  onChange={(e) => setLeaveDate(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    border: '2px solid rgba(255,255,255,0.3)',
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    color: '#fff',
+                    fontSize: '1rem'
+                  }}
+                  min={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+
+              <div style={{ marginBottom: '1rem', textAlign: 'left' }}>
+                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  Leave Type
+                </label>
+                <select
+                  value={leaveType}
+                  onChange={(e) => setLeaveType(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    border: '2px solid rgba(255,255,255,0.3)',
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    color: '#fff',
+                    fontSize: '1rem'
+                  }}
+                >
+                  <option value="sick" style={{ color: '#000' }}>Sick Leave</option>
+                  <option value="personal" style={{ color: '#000' }}>Personal Leave</option>
+                  <option value="vacation" style={{ color: '#000' }}>Vacation</option>
+                  <option value="emergency" style={{ color: '#000' }}>Emergency</option>
+                  <option value="other" style={{ color: '#000' }}>Other</option>
+                </select>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem', textAlign: 'left' }}>
+                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  Reason *
+                </label>
+                <textarea
+                  value={leaveReason}
+                  onChange={(e) => setLeaveReason(e.target.value)}
+                  placeholder="Please provide a reason for your leave..."
+                  style={{
+                    width: '100%',
+                    padding: '0.75rem',
+                    borderRadius: '8px',
+                    border: '2px solid rgba(255,255,255,0.3)',
+                    backgroundColor: 'rgba(255,255,255,0.1)',
+                    color: '#fff',
+                    fontSize: '1rem',
+                    minHeight: '80px',
+                    resize: 'vertical'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                <button 
+                  className="landing-btn" 
+                  onClick={() => setShowLeaveModal(false)}
+                  style={{ 
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    minWidth: '120px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="landing-btn" 
+                  onClick={submitLeaveApplication}
+                  style={{ 
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    minWidth: '120px'
+                  }}
+                >
+                  Submit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Success Screen */}
         {showSuccessScreen && (
           <div style={{

@@ -229,32 +229,42 @@ function Account() {
                   padding: '1rem',
                   borderRadius: '8px',
                   marginBottom: '0.5rem',
-                  border: `2px solid ${getStatusColor(record.status)}`,
+                  border: `2px solid ${record.type === 'leave' ? '#4caf50' : getStatusColor(record.status)}`,
                   boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
                     <div>
                       <strong style={{ color: '#61dafb', textTransform: 'uppercase' }}>
-                        {record.type === 'checkin' ? 'Check In' : 'Check Out'}
+                        {record.type === 'leave' ? 'Leave Taken' : 
+                         record.type === 'checkin' ? 'Check In' : 'Check Out'}
                       </strong>
                     </div>
                     <div style={{
                       padding: '0.25rem 0.75rem',
                       borderRadius: '20px',
-                      backgroundColor: getStatusColor(record.status),
+                      backgroundColor: record.type === 'leave' ? '#4caf50' : getStatusColor(record.status),
                       color: '#fff',
                       fontSize: '0.8rem',
                       fontWeight: 'bold'
                     }}>
-                      {getStatusText(record.status)}
+                      {record.type === 'leave' ? 'APPROVED LEAVE' : getStatusText(record.status)}
                     </div>
                   </div>
                   
                   <div style={{ marginTop: '0.5rem', fontSize: '0.9rem', color: '#e0e7ff' }}>
                     <div><strong>Date:</strong> {formatDate(record.timestamp)}</div>
-                    <div><strong>Time:</strong> {formatTime(record.timestamp)}</div>
+                    <div><strong>Time:</strong> {record.type === 'leave' ? 'Leave Day' : formatTime(record.timestamp)}</div>
                     {record.location && (
                       <div><strong>Location:</strong> {record.branch || 'Branch A'}</div>
+                    )}
+                    {record.type === 'leave' && (
+                      <>
+                        <div><strong>Leave Type:</strong> {record.leaveType ? record.leaveType.charAt(0).toUpperCase() + record.leaveType.slice(1) : 'N/A'}</div>
+                        <div><strong>Reason:</strong> {record.leaveReason || 'N/A'}</div>
+                        <div style={{ color: '#4caf50', fontWeight: 'bold', marginTop: '0.5rem' }}>
+                          ✅ Approved Leave Day
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>

@@ -6,6 +6,7 @@ import Register from './Register.jsx';
 import Login from './Login.jsx';
 import Dashboard from './Dashboard.jsx';
 import Account from './account.jsx';
+import AdminAcc from './AdminAcc.jsx';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -17,6 +18,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/login" element={<Login />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/account" element={<Account />} />
+        <Route path="/admin" element={<AdminAcc />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

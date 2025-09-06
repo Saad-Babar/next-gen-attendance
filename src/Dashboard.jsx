@@ -36,13 +36,25 @@ function Dashboard() {
     // Get user data from localStorage
     const currentUser = localStorage.getItem('currentUser');
     if (currentUser) {
-      setUser(JSON.parse(currentUser));
+      const userData = JSON.parse(currentUser);
+      setUser(userData);
+      
+      // Check if user is admin and redirect to admin panel
+      console.log('Dashboard - User data:', userData);
+      console.log('Dashboard - User role:', userData.role);
+      console.log('Dashboard - Role comparison (case-insensitive):', userData.role?.toLowerCase() === 'admin');
+      
+      if (userData.role?.toLowerCase() === 'admin') {
+        console.log('Dashboard - Redirecting admin to admin panel...');
+        navigate('/admin');
+        return;
+      }
     }
     setLoading(false);
     
     // Get server time from third-party API
     fetchServerTime();
-  }, []);
+  }, [navigate]);
 
   const fetchServerTime = async (retryCount = 0) => {
     const maxRetries = 2;

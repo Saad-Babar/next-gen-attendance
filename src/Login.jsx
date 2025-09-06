@@ -46,14 +46,33 @@ function Login() {
         return;
       }
 
+      // Check if user account is active
+      if (userData.status !== 'active') {
+        setError('Your account is inactive. Please contact an administrator to activate your account.');
+        setLoading(false);
+        return;
+      }
+
       // Store user data in localStorage for session
       localStorage.setItem('currentUser', JSON.stringify({
         id: userDoc.id,
         ...userData
       }));
 
-      // Redirect to dashboard
-      window.location.href = '/dashboard';
+      // Debug: Log user data and role
+      console.log('User data:', userData);
+      console.log('User role:', userData.role);
+      console.log('Role type:', typeof userData.role);
+      console.log('Role comparison (case-insensitive):', userData.role?.toLowerCase() === 'admin');
+
+      // Redirect based on user role (case-insensitive)
+      if (userData.role?.toLowerCase() === 'admin') {
+        console.log('Redirecting to admin panel...');
+        window.location.href = '/admin';
+      } else {
+        console.log('Redirecting to dashboard...');
+        window.location.href = '/dashboard';
+      }
       
     } catch (err) {
       setError('Login failed. Please try again.');

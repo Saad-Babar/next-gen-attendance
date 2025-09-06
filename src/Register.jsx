@@ -217,6 +217,7 @@ function Register() {
         location: form.location,
         faceDescriptor: form.faceDescriptor, // Store descriptor
         registeredAt: Timestamp.now(),
+        status: 'inactive', // Default status - user needs admin approval
       });
       console.log('User saved with ID:', userDocRef.id);
       
@@ -234,6 +235,7 @@ function Register() {
         location: form.location,
         faceDescriptor: form.faceDescriptor, // Store descriptor
         registeredAt: Timestamp.now(),
+        status: 'inactive', // Default status - user needs admin approval
         totalCheckIns: 0,
         totalCheckOuts: 0,
         totalLateCheckIns: 0,
@@ -366,7 +368,20 @@ function Register() {
         )}
         <button className="landing-btn" type="submit" disabled={loading}>{loading ? 'Registering...' : 'Register'}</button>
         {submitError && <div style={{ color: '#ff6b6b', marginTop: 8 }}>{submitError}</div>}
-        {success && <div style={{ color: '#61dafb', marginTop: 8 }}>Registration successful!</div>}
+        {success && (
+          <div style={{ 
+            color: '#61dafb', 
+            marginTop: 8, 
+            padding: '1rem',
+            background: 'rgba(97, 218, 251, 0.1)',
+            borderRadius: '8px',
+            border: '1px solid #61dafb'
+          }}>
+            <strong>Registration successful!</strong><br/>
+            Your account has been created and is pending admin approval.<br/>
+            You will be able to login once an administrator activates your account.
+          </div>
+        )}
       </form>
       <button className="landing-btn" onClick={() => window.location.href = '/'} style={{marginTop: '1rem'}}>Back to Home</button>
     </div>

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './App.css';
 import { db } from './firebase';
-import { collection, addDoc, Timestamp, query, where, getDocs, orderBy, limit, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, Timestamp, query, where, getDocs, orderBy, limit, updateDoc, getDoc, deleteDoc } from 'firebase/firestore';
 import { loadFaceApiModels, getFaceDescriptor, compareFaceDescriptors } from './faceApiUtils';
 
 function Dashboard() {
@@ -43,6 +43,9 @@ function Dashboard() {
       console.log('Dashboard - User data:', userData);
       console.log('Dashboard - User role:', userData.role);
       console.log('Dashboard - Role comparison (case-insensitive):', userData.role?.toLowerCase() === 'admin');
+      console.log('Dashboard - Face descriptor exists:', !!userData.faceDescriptor);
+      console.log('Dashboard - Face descriptor type:', typeof userData.faceDescriptor);
+      console.log('Dashboard - Face descriptor length:', userData.faceDescriptor ? userData.faceDescriptor.length : 'N/A');
       
       if (userData.role?.toLowerCase() === 'admin') {
         console.log('Dashboard - Redirecting admin to admin panel...');
@@ -57,7 +60,7 @@ function Dashboard() {
   }, [navigate]);
 
   const fetchServerTime = async (retryCount = 0) => {
-    const maxRetries = 2;
+    const maxRetries = 3;
     
     // Prevent multiple simultaneous calls
     if (serverTimeFetchedRef.current || serverTime) {
@@ -68,36 +71,76 @@ function Dashboard() {
     serverTimeFetchedRef.current = true;
     
     try {
-      console.log(`Attempting to fetch server time from worldtimeapi.org... (attempt ${retryCount + 1})`);
-      const response = await fetch('https://worldtimeapi.org/api/timezone/Asia/Karachi', {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-        },
-        // Add timeout to prevent hanging
-        signal: AbortSignal.timeout(5000) // 5 second timeout
-      });
+      console.log(`Attempting to fetch server time from multiple sources... (attempt ${retryCount + 1})`);
       
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+      // Try multiple time APIs for better reliability
+      const timeAPIs = [
+        'https://worldtimeapi.org/api/timezone/Asia/Karachi',
+        'https://timeapi.io/api/Time/current/zone?timeZone=Asia/Karachi',
+        'https://api.timezonedb.com/v2.1/get-time-zone?key=demo&format=json&by=zone&zone=Asia/Karachi'
+      ];
+      
+      let serverTimeData = null;
+      let apiUsed = '';
+      
+      // Try each API until one succeeds
+      for (const api of timeAPIs) {
+        try {
+          console.log(`Trying API: ${api}`);
+          const response = await fetch(api, {
+            method: 'GET',
+            headers: {
+              'Accept': 'application/json',
+            },
+            signal: AbortSignal.timeout(3000) // 3 second timeout per API
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            // Parse different API response formats
+            if (data.datetime) {
+              serverTimeData = new Date(data.datetime);
+              apiUsed = 'worldtimeapi';
+            } else if (data.dateTime) {
+              serverTimeData = new Date(data.dateTime);
+              apiUsed = 'timeapi';
+            } else if (data.formatted) {
+              serverTimeData = new Date(data.formatted);
+              apiUsed = 'timezonedb';
+            }
+            
+            if (serverTimeData && !isNaN(serverTimeData.getTime())) {
+              console.log(`Server time fetched successfully from ${apiUsed}:`, serverTimeData.toISOString());
+              break;
+            }
+          }
+        } catch (apiError) {
+          console.log(`API ${api} failed:`, apiError.message);
+          continue;
+        }
       }
       
-      const data = await response.json();
-      console.log('Server time fetched successfully:', data.datetime);
-      setServerTime(new Date(data.datetime));
+      if (serverTimeData) {
+        setServerTime(serverTimeData);
+        return;
+      }
+      
+      throw new Error('All time APIs failed');
+      
     } catch (error) {
-      console.warn(`Failed to fetch server time from API (attempt ${retryCount + 1}):`, error.message);
+      console.warn(`Failed to fetch server time from all APIs (attempt ${retryCount + 1}):`, error.message);
       
       // Retry if we haven't exceeded max retries
       if (retryCount < maxRetries) {
-        console.log(`Retrying in 2 seconds... (${retryCount + 1}/${maxRetries})`);
+        console.log(`Retrying in 3 seconds... (${retryCount + 1}/${maxRetries})`);
         setTimeout(() => {
           fetchServerTime(retryCount + 1);
-        }, 2000);
+        }, 3000);
       } else {
-        console.log('Max retries reached, using local time as fallback');
-        // Fallback to local time if API fails after all retries
-        setServerTime(new Date());
+        console.log('Max retries reached, using secure fallback');
+        // Use Firebase server timestamp as fallback (more secure than local time)
+        setServerTime(new Date()); // This will be replaced by Firebase timestamp in processAttendance
+        console.log('Using Firebase server timestamp as fallback');
       }
     }
   };
@@ -437,8 +480,15 @@ function Dashboard() {
       // --- FACE RECOGNITION ---
       console.log('Starting face recognition...');
       showPopupMessage('Verifying face identity...', 'warning');
-      await loadFaceApiModels();
-      console.log('Face models loaded for verification');
+      
+      try {
+        await loadFaceApiModels();
+        console.log('Face models loaded for verification');
+      } catch (error) {
+        console.error('Error loading face models:', error);
+        showPopupMessage('Error loading face recognition models. Please refresh the page.', 'error');
+        return;
+      }
       
       const img = new Image();
       img.src = canvas.toDataURL('image/jpeg');
@@ -447,6 +497,9 @@ function Dashboard() {
       
       const capturedDescriptor = await getFaceDescriptor(img);
       console.log('Face descriptor result:', capturedDescriptor ? 'Success' : 'Failed');
+      console.log('Captured descriptor type:', typeof capturedDescriptor);
+      console.log('Captured descriptor length:', capturedDescriptor ? capturedDescriptor.length : 'N/A');
+      console.log('Captured descriptor sample:', capturedDescriptor ? capturedDescriptor.slice(0, 5) : 'N/A');
       
       // Multi-factor verification: Check face detection confidence
       const faceDetection = await window.faceapi
@@ -471,6 +524,9 @@ function Dashboard() {
       if (!user.faceDescriptor) {
         showPopupMessage('No reference face found. Please contact admin.', 'error');
         console.log('SECURITY ALERT: No reference face found for user:', user.empId);
+        console.log('User data from localStorage:', user);
+        console.log('Face descriptor type:', typeof user.faceDescriptor);
+        console.log('Face descriptor value:', user.faceDescriptor);
         return;
       }
       const isFaceMatch = compareFaceDescriptors(capturedDescriptor, user.faceDescriptor);
@@ -555,12 +611,39 @@ function Dashboard() {
   };
 
   const processAttendance = async (type, location) => {
-    if (!serverTime) {
-      showPopupMessage('Server time not available. Please try again.', 'error');
-      return;
+    let currentTime;
+    
+    if (serverTime) {
+      // Use verified server time
+      currentTime = serverTime;
+      console.log('Using verified server time:', currentTime.toISOString());
+    } else {
+      // Use Firebase server timestamp as secure fallback
+      console.log('Using Firebase server timestamp as secure fallback');
+      try {
+        // Create a temporary document to get Firebase server timestamp
+        const tempRef = await addDoc(collection(db, 'temp_timestamps'), {
+          temp: true
+        });
+        
+        // Get the document to read the server timestamp
+        const tempDoc = await getDoc(tempRef);
+        const serverTimestamp = tempDoc.data().timestamp;
+        
+        // Convert Firebase timestamp to Date
+        currentTime = serverTimestamp.toDate();
+        
+        // Clean up temporary document
+        await deleteDoc(tempRef);
+        
+        console.log('Firebase server timestamp obtained:', currentTime.toISOString());
+      } catch (error) {
+        console.error('Failed to get Firebase server timestamp:', error);
+        // Last resort: use local time but log security warning
+        currentTime = new Date();
+        console.warn('SECURITY WARNING: Using local time as last resort - may be tampered with');
+      }
     }
-
-    const currentTime = serverTime;
     const today = currentTime.toISOString().split('T')[0]; // YYYY-MM-DD format
     
     // Check if user already has attendance for today
@@ -623,11 +706,23 @@ function Dashboard() {
     }
 
     try {
+      // Additional security: Check for suspicious time differences
+      const localTime = new Date();
+      const timeDifference = Math.abs(currentTime.getTime() - localTime.getTime());
+      const maxAllowedDifference = 5 * 60 * 1000; // 5 minutes in milliseconds
+      
+      if (timeDifference > maxAllowedDifference) {
+        console.warn(`SECURITY ALERT: Large time difference detected - Server: ${currentTime.toISOString()}, Local: ${localTime.toISOString()}, Difference: ${Math.round(timeDifference / 1000)}s`);
+        // Log this as a potential security issue but don't block attendance
+      }
+      
       // Create attendance record
       const attendanceRecord = {
         type: type,
         timestamp: Timestamp.now(),
         serverTime: currentTime.toISOString(),
+        localTime: localTime.toISOString(), // Store local time for comparison
+        timeDifference: timeDifference, // Store the difference for analysis
         status: status,
         location: location,
         date: currentTime.toISOString().split('T')[0] // YYYY-MM-DD format

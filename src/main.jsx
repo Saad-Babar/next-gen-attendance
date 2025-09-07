@@ -7,6 +7,7 @@ import Login from './Login.jsx';
 import Dashboard from './Dashboard.jsx';
 import Account from './account.jsx';
 import AdminAcc from './AdminAcc.jsx';
+import SupAdmin from './SupAdmin.jsx';
 import './index.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
@@ -19,6 +20,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/account" element={<Account />} />
         <Route path="/admin" element={<AdminAcc />} />
+        <Route path="/supadmin" element={<SupAdmin />} />
       </Routes>
     </BrowserRouter>
   </React.StrictMode>

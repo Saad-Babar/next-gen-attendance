@@ -66,7 +66,10 @@ function Login() {
       console.log('Role comparison (case-insensitive):', userData.role?.toLowerCase() === 'admin');
 
       // Redirect based on user role (case-insensitive)
-      if (userData.role?.toLowerCase() === 'admin') {
+      if (userData.role?.toLowerCase() === 'super admin') {
+        console.log('Redirecting to super admin panel...');
+        window.location.href = '/supadmin';
+      } else if (userData.role?.toLowerCase() === 'admin') {
         console.log('Redirecting to admin panel...');
         window.location.href = '/admin';
       } else {

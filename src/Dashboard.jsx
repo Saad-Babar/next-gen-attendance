@@ -147,7 +147,7 @@ function Dashboard() {
           });
           
           if (response.ok) {
-            const data = await response.json();
+      const data = await response.json();
             // Parse different API response formats
             if (data.datetime) {
               serverTimeData = new Date(data.datetime);
@@ -274,15 +274,15 @@ function Dashboard() {
     
     try {
       console.log('Loading face-api models...');
-      await loadFaceApiModels();
+    await loadFaceApiModels();
       console.log('Face-api models loaded successfully');
       
-      if (!videoRef.current) {
-        setLivenessError('Video not available. Please try again.');
-        return;
-      }
+    if (!videoRef.current) {
+      setLivenessError('Video not available. Please try again.');
+      return;
+    }
       
-      const video = videoRef.current;
+    const video = videoRef.current;
       console.log('Video dimensions:', video.videoWidth, 'x', video.videoHeight);
       
       if (!video.videoWidth || !video.videoHeight) {
@@ -296,18 +296,18 @@ function Dashboard() {
         return;
       }
       
-      const frames = [];
+    const frames = [];
       // Capture frames for 1.5 seconds (every 50ms for faster detection)
       for (let i = 0; i < 30; i++) {
         await new Promise(res => setTimeout(res, 50));
         setLivenessProgress((i + 1) * 3.33); // Update progress (0-100%)
-        const canvas = document.createElement('canvas');
-        canvas.width = video.videoWidth || 640;
-        canvas.height = video.videoHeight || 480;
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth || 640;
+      canvas.height = video.videoHeight || 480;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0);
-        frames.push(canvas);
-      }
+      frames.push(canvas);
+    }
       
       console.log('Captured', frames.length, 'frames for analysis');
       
@@ -323,9 +323,9 @@ function Dashboard() {
           const frame = frames[i];
           console.log(`Analyzing frame ${i + 1}/${frames.length}...`);
           
-          const detection = await window.faceapi
-            .detectSingleFace(frame, new window.faceapi.TinyFaceDetectorOptions())
-            .withFaceLandmarks();
+      const detection = await window.faceapi
+        .detectSingleFace(frame, new window.faceapi.TinyFaceDetectorOptions())
+        .withFaceLandmarks();
             
           if (!detection || !detection.landmarks) {
             console.log(`Frame ${i + 1} - NO FACE DETECTED (possible blink)`);
@@ -333,7 +333,7 @@ function Dashboard() {
             confidenceValues.push(0); // No confidence when no face detected
             if (lastState === 'detected') blinked = true;
             lastState = 'not_detected';
-          } else {
+      } else {
             console.log(`Frame ${i + 1} - Face detected, confidence: ${detection.detection.score}`);
             faceDetectedCount++;
             confidenceValues.push(detection.detection.score || 1.0); // Track confidence score
@@ -362,8 +362,8 @@ function Dashboard() {
       
       // Blink detected if we have both detected and not detected frames OR significant confidence drops
       if ((blinked && faceDetectedCount > 3 && faceNotDetectedCount > 0) || confidenceDrops > 1) {
-        setLivenessChecked(true);
-        setLivenessError('');
+      setLivenessChecked(true);
+      setLivenessError('');
         setLivenessProgress(100); // Complete progress
         console.log('Liveness check PASSED - blink detected via face detection failure!');
         
@@ -374,9 +374,9 @@ function Dashboard() {
         setTimeout(() => {
           capturePhoto();
         }, 1000); // Wait 1 second for user to see success message
-      } else {
-        setLivenessChecked(false);
-        setLivenessError('No blink detected. Please blink clearly and try again.');
+    } else {
+      setLivenessChecked(false);
+      setLivenessError('No blink detected. Please blink clearly and try again.');
         setLivenessProgress(0); // Reset progress
         console.log('Liveness check FAILED - no blink detected');
       }
@@ -534,7 +534,7 @@ function Dashboard() {
       showPopupMessage('Verifying face identity...', 'warning');
       
       try {
-        await loadFaceApiModels();
+      await loadFaceApiModels();
         console.log('Face models loaded for verification');
       } catch (error) {
         console.error('Error loading face models:', error);
@@ -1215,7 +1215,7 @@ function Dashboard() {
               }}>
                 Are you sure you want to <strong>{pendingAttendanceType === 'checkin' ? 'CHECK IN' : 'CHECK OUT'}</strong>?
               </p>
-              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
                 <button 
                   className="landing-btn" 
                   onClick={() => setShowConfirmation(false)}

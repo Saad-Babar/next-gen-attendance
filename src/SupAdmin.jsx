@@ -36,24 +36,39 @@ function SupAdmin() {
   });
   const navigate = useNavigate();
 
+  // Search and filter states
+  const [pendingSearch, setPendingSearch] = useState('');
+  const [pendingBranchFilter, setPendingBranchFilter] = useState('all');
+  const [pendingRoleFilter, setPendingRoleFilter] = useState('all');
+
+  const [allUsersSearch, setAllUsersSearch] = useState('');
+  const [allUsersBranchFilter, setAllUsersBranchFilter] = useState('all');
+  const [allUsersRoleFilter, setAllUsersRoleFilter] = useState('all');
+  const [allUsersStatusFilter, setAllUsersStatusFilter] = useState('all');
+
+  const [leaveSearch, setLeaveSearch] = useState('');
+  const [leaveStatusFilter, setLeaveStatusFilter] = useState('all');
+  const [leaveBranchFilter, setLeaveBranchFilter] = useState('all');
+  const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
+
   useEffect(() => {
     // Get user data from localStorage
     const currentUser = localStorage.getItem('currentUser');
     if (currentUser) {
       const userData = JSON.parse(currentUser);
       setUser(userData);
-      
+
       // Check if user is super admin
       console.log('SupAdmin - User data:', userData);
       console.log('SupAdmin - User role:', userData.role);
       console.log('SupAdmin - Role comparison (case-insensitive):', userData.role?.toLowerCase() === 'super admin');
-      
+
       if (userData.role?.toLowerCase() !== 'super admin') {
         console.log('SupAdmin - Non-super admin user, redirecting to dashboard...');
         navigate('/dashboard');
         return;
       }
-      
+
       // Load inactive users, all users, branches, and leave applications
       loadInactiveUsers();
       loadAllUsers();
@@ -81,12 +96,12 @@ function SupAdmin() {
       const usersRef = collection(db, 'users');
       const q = query(usersRef, where('status', '==', 'inactive'));
       const querySnapshot = await getDocs(q);
-      
+
       const inactive = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      
+
       setInactiveUsers(inactive);
     } catch (error) {
       console.error('Error loading inactive users:', error);
@@ -98,12 +113,12 @@ function SupAdmin() {
       const usersRef = collection(db, 'users');
       const q = query(usersRef, orderBy('registeredAt', 'desc'));
       const querySnapshot = await getDocs(q);
-      
+
       const users = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      
+
       setAllUsers(users);
     } catch (error) {
       console.error('Error loading all users:', error);
@@ -114,7 +129,7 @@ function SupAdmin() {
     try {
       const usersRef = collection(db, 'users');
       const querySnapshot = await getDocs(usersRef);
-      
+
       const branches = new Set();
       querySnapshot.docs.forEach(doc => {
         const userData = doc.data();
@@ -122,7 +137,7 @@ function SupAdmin() {
           branches.add(userData.branch);
         }
       });
-      
+
       setAvailableBranches(Array.from(branches).sort());
     } catch (error) {
       console.error('Error loading branches:', error);
@@ -135,25 +150,25 @@ function SupAdmin() {
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
       const userData = userDoc.data();
-      
+
       // Update users collection
       await updateDoc(userRef, { status: 'active' });
-      
+
       // Find and update empdata collection using empId
       if (userData.empId) {
         const empdataQuery = query(collection(db, 'empdata'), where('empId', '==', userData.empId));
         const empdataSnapshot = await getDocs(empdataQuery);
-        
+
         if (!empdataSnapshot.empty) {
           const empdataDoc = empdataSnapshot.docs[0];
           await updateDoc(empdataDoc.ref, { status: 'active' });
         }
       }
-      
+
       // Reload data
       loadInactiveUsers();
       loadAllUsers();
-      
+
       alert('User activated successfully!');
     } catch (error) {
       console.error('Error activating user:', error);
@@ -170,7 +185,7 @@ function SupAdmin() {
 
     // Confirm deactivation
     const confirmed = window.confirm('Are you sure you want to deactivate this user? They will not be able to login until reactivated.');
-    
+
     if (!confirmed) {
       return;
     }
@@ -180,25 +195,25 @@ function SupAdmin() {
       const userRef = doc(db, 'users', userId);
       const userDoc = await getDoc(userRef);
       const userData = userDoc.data();
-      
+
       // Update users collection
       await updateDoc(userRef, { status: 'inactive' });
-      
+
       // Find and update empdata collection using empId
       if (userData.empId) {
         const empdataQuery = query(collection(db, 'empdata'), where('empId', '==', userData.empId));
         const empdataSnapshot = await getDocs(empdataQuery);
-        
+
         if (!empdataSnapshot.empty) {
           const empdataDoc = empdataSnapshot.docs[0];
           await updateDoc(empdataDoc.ref, { status: 'inactive' });
         }
       }
-      
+
       // Reload data
       loadInactiveUsers();
       loadAllUsers();
-      
+
       alert('User deactivated successfully!');
     } catch (error) {
       console.error('Error deactivating user:', error);
@@ -211,12 +226,12 @@ function SupAdmin() {
       const leaveRef = collection(db, 'leaveApplications');
       const q = query(leaveRef, orderBy('appliedAt', 'desc'));
       const querySnapshot = await getDocs(q);
-      
+
       const applications = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      
+
       setLeaveApplications(applications);
     } catch (error) {
       console.error('Error loading leave applications:', error);
@@ -227,7 +242,7 @@ function SupAdmin() {
     try {
       // Update leave application status
       const leaveRef = doc(db, 'leaveApplications', applicationId);
-      await updateDoc(leaveRef, { 
+      await updateDoc(leaveRef, {
         status: 'approved',
         approvedAt: Timestamp.now(),
         approvedBy: user.name
@@ -252,7 +267,7 @@ function SupAdmin() {
       };
 
       await addDoc(collection(db, 'attendance'), attendanceRecord);
-      
+
       // Reload leave applications
       loadLeaveApplications();
       alert('Leave approved successfully!');
@@ -265,12 +280,12 @@ function SupAdmin() {
   const rejectLeave = async (applicationId) => {
     try {
       const leaveRef = doc(db, 'leaveApplications', applicationId);
-      await updateDoc(leaveRef, { 
+      await updateDoc(leaveRef, {
         status: 'rejected',
         rejectedAt: Timestamp.now(),
         rejectedBy: user.name
       });
-      
+
       loadLeaveApplications();
       alert('Leave application rejected.');
     } catch (error) {
@@ -336,7 +351,7 @@ function SupAdmin() {
       if (editForm.location.lat.trim() && editForm.location.lng.trim()) {
         const lat = parseFloat(editForm.location.lat);
         const lng = parseFloat(editForm.location.lng);
-        
+
         // Validate coordinate ranges
         if (lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
           updateData.location = { lat, lng };
@@ -359,7 +374,7 @@ function SupAdmin() {
       // Reload users
       loadAllUsers();
       loadInactiveUsers();
-      
+
       alert('User updated successfully!');
       closeEditModal();
     } catch (error) {
@@ -373,24 +388,24 @@ function SupAdmin() {
       // Fetch all attendance data to avoid index issues
       const attendanceRef = collection(db, 'attendance');
       const q = query(attendanceRef);
-      
+
       const querySnapshot = await getDocs(q);
       const allData = querySnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      
+
       // Filter data in JavaScript
       let filteredData = allData.filter(record => {
         const recordDate = record.date;
         return recordDate >= startDate && recordDate <= endDate;
       });
-      
+
       // Filter by branch if not 'all'
       if (branch !== 'all') {
         filteredData = filteredData.filter(record => record.branch === branch);
       }
-      
+
       // Also fetch leave applications for the date range
       const leaveRef = collection(db, 'leaveApplications');
       const leaveQuery = query(leaveRef);
@@ -401,9 +416,9 @@ function SupAdmin() {
       }));
 
       // Filter approved leaves by date range
-      const approvedLeaves = leaveApplications.filter(leave => 
-        leave.status === 'approved' && 
-        leave.leaveDate >= startDate && 
+      const approvedLeaves = leaveApplications.filter(leave =>
+        leave.status === 'approved' &&
+        leave.leaveDate >= startDate &&
         leave.leaveDate <= endDate
       );
 
@@ -416,7 +431,7 @@ function SupAdmin() {
       });
 
       return { attendanceData: sortedData, leaveData: approvedLeaves };
-      
+
     } catch (error) {
       console.error('Error fetching attendance data:', error);
       return [];
@@ -430,10 +445,10 @@ function SupAdmin() {
       const ctx = canvas.getContext('2d');
       canvas.width = 200;
       canvas.height = 200;
-      
+
       // Create an image element
       const img = new Image();
-      
+
       return new Promise((resolve) => {
         img.onload = () => {
           // Draw the PNG to canvas with better quality
@@ -442,12 +457,12 @@ function SupAdmin() {
           const pngBase64 = canvas.toDataURL('image/png');
           resolve(pngBase64);
         };
-        
+
         img.onerror = () => {
           console.error('Error loading SVG logo');
           resolve(null);
         };
-        
+
         // Load the PNG (convert your SVG to PNG first)
         img.src = '/Khas_Logo.png';
       });
@@ -500,7 +515,7 @@ function SupAdmin() {
       const branchRecords = attendanceData.filter(record => record.branch === branchName);
       const checkIns = branchRecords.filter(record => record.type === 'checkin');
       const checkOuts = branchRecords.filter(record => record.type === 'checkout');
-      
+
       stats.branchWise[branchName] = {
         totalEmployees: employees.size,
         presentDays: checkIns.length,
@@ -541,47 +556,47 @@ function SupAdmin() {
     const start = new Date(reportStartDate);
     const end = new Date(reportEndDate);
     let workingDays = 0;
-    
+
     for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
       if (d.getDay() !== 0 && d.getDay() !== 6) { // Exclude weekends
         workingDays++;
       }
     }
-    
+
     return Math.max(workingDays, 1); // At least 1 day
   };
 
   const calculateOvertimeHours = (checkIns, checkOuts) => {
     // Simple overtime calculation - can be enhanced based on business rules
     let totalOvertime = 0;
-    
+
     checkIns.forEach(checkIn => {
-      const checkOut = checkOuts.find(co => 
-        co.empId === checkIn.empId && 
+      const checkOut = checkOuts.find(co =>
+        co.empId === checkIn.empId &&
         co.date === checkIn.date
       );
-      
+
       if (checkOut) {
         const inTime = new Date(checkIn.timestamp.seconds * 1000);
         const outTime = new Date(checkOut.timestamp.seconds * 1000);
         const hoursWorked = (outTime - inTime) / (1000 * 60 * 60);
-        
+
         // Assuming 8 hours is standard work day
         if (hoursWorked > 8) {
           totalOvertime += hoursWorked - 8;
         }
       }
     });
-    
+
     return Math.round(totalOvertime * 10) / 10; // Round to 1 decimal
   };
 
   const generateSummaryReport = async (attendanceData, leaveData, branch) => {
     const doc = new jsPDF();
-    
+
     // Set font to Calibri (fallback to Arial)
     doc.setFont('helvetica', 'normal');
-    
+
     // HEADER SECTION
     // Company Logo
     try {
@@ -600,27 +615,27 @@ function SupAdmin() {
       doc.setTextColor(100, 100, 100);
       doc.text('ATTENDANCE SYSTEM', 20, 35);
     }
-    
+
     // Report Title - positioned below logo
     doc.setFontSize(18);
     doc.setTextColor(0, 0, 0);
     doc.text('ATTENDANCE SUMMARY REPORT', 20, 45);
-    
+
     // Report Details - positioned below title
     doc.setFontSize(10);
     doc.setTextColor(100, 100, 100);
     doc.text(`Branch: ${branch === 'all' ? 'All Branches (Overall Pakistan)' : branch}`, 20, 60);
     doc.text(`Date Range: ${reportStartDate} to ${reportEndDate}`, 20, 68);
     doc.text(`Generated: ${new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}`, 20, 76);
-    
+
     // Calculate comprehensive statistics
     const stats = calculateSummaryStats(attendanceData, leaveData, branch);
-    
+
     // TABLE FORMAT - Summary Statistics
     const summaryData = [
       ['Branch Name', 'Total Employees', 'Present Days', 'Absent Days', 'Late Comings', 'Early Leaves', 'Leaves Approved', 'Overtime Hours', 'Attendance %']
     ];
-    
+
     if (branch === 'all') {
       // Branch-wise data
       Object.entries(stats.branchWise).forEach(([branchName, data]) => {
@@ -636,7 +651,7 @@ function SupAdmin() {
           `${data.attendancePercentage.toFixed(1)}%`
         ]);
       });
-      
+
       // Overall totals
       summaryData.push([
         'TOTAL (All Branches)',
@@ -663,18 +678,18 @@ function SupAdmin() {
         `${stats.overall.attendancePercentage.toFixed(1)}%`
       ]);
     }
-    
+
     // Add table - positioned below report details
     autoTable(doc, {
       head: [summaryData[0]],
       body: summaryData.slice(1),
       startY: 90,
-      styles: { 
+      styles: {
         fontSize: 9,
         font: 'helvetica',
         cellPadding: 3
       },
-      headStyles: { 
+      headStyles: {
         fillColor: [97, 218, 251],
         textColor: [0, 0, 0],
         fontStyle: 'bold'
@@ -694,7 +709,7 @@ function SupAdmin() {
         8: { halign: 'center' }   // Attendance %
       }
     });
-    
+
     // FOOTER SECTION
     const pageHeight = doc.internal.pageSize.height;
     doc.setFontSize(8);
@@ -702,16 +717,16 @@ function SupAdmin() {
     doc.text('Prepared by: _________________', 20, pageHeight - 30);
     doc.text('Verified by: _________________', 20, pageHeight - 20);
     doc.text(`Page 1 of 1`, 180, pageHeight - 20);
-    
+
     return doc;
   };
 
   const generateDetailedReport = async (attendanceData, leaveData, branch) => {
     const doc = new jsPDF();
-    
+
     // Set font to Calibri (fallback to Arial)
     doc.setFont('helvetica', 'normal');
-    
+
     // HEADER SECTION
     // Company Logo
     try {
@@ -730,25 +745,25 @@ function SupAdmin() {
       doc.setTextColor(100, 100, 100);
       doc.text('ATTENDANCE SYSTEM', 20, 35);
     }
-    
+
     // Report Title - positioned below logo
     doc.setFontSize(18);
     doc.setTextColor(0, 0, 0);
     doc.text('DETAILED ATTENDANCE REPORT', 20, 45);
-    
+
     // Report Details - positioned below title
     doc.setFontSize(10);
     doc.setTextColor(100, 100, 100);
     doc.text(`Branch: ${branch === 'all' ? 'All Branches' : branch}`, 20, 60);
     doc.text(`Date Range: ${reportStartDate} to ${reportEndDate}`, 20, 68);
     doc.text(`Generated: ${new Date().toLocaleString('en-PK', { timeZone: 'Asia/Karachi' })}`, 20, 76);
-    
+
     // Group data by employee for detailed view
     const employeeData = groupAttendanceByEmployee(attendanceData);
-    
+
     let currentY = 90;
     let pageNumber = 1;
-    
+
     // Process each employee
     Object.entries(employeeData).forEach(([empId, empInfo]) => {
       // Check if we need a new page
@@ -757,7 +772,7 @@ function SupAdmin() {
         pageNumber++;
         currentY = 20;
       }
-      
+
       // Employee Details Section
       doc.setFontSize(12);
       doc.setTextColor(0, 0, 0);
@@ -769,7 +784,7 @@ function SupAdmin() {
       currentY += 8;
       doc.text(`Branch: ${empInfo.branch}`, 20, currentY);
       currentY += 15;
-      
+
       // Daily Attendance Table
       const tableData = empInfo.attendance.map(record => {
         const checkInTime = record.checkIn ? new Date(record.checkIn.timestamp.seconds * 1000).toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi' }) : 'N/A';
@@ -778,7 +793,7 @@ function SupAdmin() {
         const lateMinutes = calculateLateMinutes(record.checkIn);
         const earlyMinutes = calculateEarlyMinutes(record.checkOut);
         const overtimeHours = calculateDailyOvertime(record.checkIn, record.checkOut);
-        
+
         return [
           record.date,
           '09:00 - 18:00', // Standard shift time
@@ -790,18 +805,18 @@ function SupAdmin() {
           overtimeHours > 0 ? `${overtimeHours}h` : '0h'
         ];
       });
-      
+
       // Add table for this employee
       autoTable(doc, {
         head: [['Date', 'Shift Time', 'Actual Check-In', 'Actual Check-Out', 'Status', 'Late', 'Early Leave', 'Overtime']],
         body: tableData,
         startY: currentY,
-        styles: { 
+        styles: {
           fontSize: 8,
           font: 'helvetica',
           cellPadding: 2
         },
-        headStyles: { 
+        headStyles: {
           fillColor: [97, 218, 251],
           textColor: [0, 0, 0],
           fontStyle: 'bold'
@@ -820,10 +835,10 @@ function SupAdmin() {
           7: { halign: 'center' }   // Overtime
         }
       });
-      
+
       currentY = doc.lastAutoTable.finalY + 20;
     });
-    
+
     // FOOTER SECTION
     const pageHeight = doc.internal.pageSize.height;
     doc.setFontSize(8);
@@ -831,16 +846,16 @@ function SupAdmin() {
     doc.text('Prepared by: _________________', 20, pageHeight - 30);
     doc.text('Verified by: _________________', 20, pageHeight - 20);
     doc.text(`Page ${pageNumber} of ${pageNumber}`, 180, pageHeight - 20);
-    
+
     return doc;
   };
 
   const groupAttendanceByEmployee = (attendanceData) => {
     const employeeData = {};
-    
+
     attendanceData.forEach(record => {
       const empId = record.empId;
-      
+
       if (!employeeData[empId]) {
         employeeData[empId] = {
           empId: empId,
@@ -850,10 +865,10 @@ function SupAdmin() {
           attendance: []
         };
       }
-      
+
       // Find existing attendance record for this date
       let attendanceRecord = employeeData[empId].attendance.find(att => att.date === record.date);
-      
+
       if (!attendanceRecord) {
         attendanceRecord = {
           date: record.date,
@@ -862,7 +877,7 @@ function SupAdmin() {
         };
         employeeData[empId].attendance.push(attendanceRecord);
       }
-      
+
       // Add check-in or check-out
       if (record.type === 'checkin') {
         attendanceRecord.checkIn = record;
@@ -870,12 +885,12 @@ function SupAdmin() {
         attendanceRecord.checkOut = record;
       }
     });
-    
+
     // Sort attendance by date
     Object.values(employeeData).forEach(emp => {
       emp.attendance.sort((a, b) => new Date(a.date) - new Date(b.date));
     });
-    
+
     return employeeData;
   };
 
@@ -888,31 +903,31 @@ function SupAdmin() {
 
   const calculateLateMinutes = (checkIn) => {
     if (!checkIn || checkIn.status !== 'late') return 0;
-    
+
     const checkInTime = new Date(checkIn.timestamp.seconds * 1000);
     const standardTime = new Date(checkInTime);
     standardTime.setHours(9, 0, 0, 0); // 9:00 AM
-    
+
     return Math.max(0, Math.round((checkInTime - standardTime) / (1000 * 60)));
   };
 
   const calculateEarlyMinutes = (checkOut) => {
     if (!checkOut || checkOut.status !== 'early') return 0;
-    
+
     const checkOutTime = new Date(checkOut.timestamp.seconds * 1000);
     const standardTime = new Date(checkOutTime);
     standardTime.setHours(18, 0, 0, 0); // 6:00 PM
-    
+
     return Math.max(0, Math.round((standardTime - checkOutTime) / (1000 * 60)));
   };
 
   const calculateDailyOvertime = (checkIn, checkOut) => {
     if (!checkIn || !checkOut) return 0;
-    
+
     const inTime = new Date(checkIn.timestamp.seconds * 1000);
     const outTime = new Date(checkOut.timestamp.seconds * 1000);
     const hoursWorked = (outTime - inTime) / (1000 * 60 * 60);
-    
+
     // Assuming 8 hours is standard work day
     const overtime = Math.max(0, hoursWorked - 8);
     return Math.round(overtime * 10) / 10; // Round to 1 decimal
@@ -924,7 +939,7 @@ function SupAdmin() {
     const lastMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
     setReportStartDate(lastMonth.toISOString().split('T')[0]);
     setReportEndDate(today.toISOString().split('T')[0]);
-    
+
     setShowReportModal(true);
   };
 
@@ -933,35 +948,35 @@ function SupAdmin() {
       alert('Please select both start and end dates.');
       return;
     }
-    
+
     setGeneratingReport(true);
-    
+
     try {
       const { attendanceData, leaveData } = await fetchAttendanceData(reportStartDate, reportEndDate, selectedBranch);
-      
+
       if (attendanceData.length === 0) {
         alert('No attendance data found for the selected criteria.');
         setGeneratingReport(false);
         return;
       }
-      
+
       let doc;
       if (reportType === 'summary') {
         doc = await generateSummaryReport(attendanceData, leaveData, selectedBranch);
       } else {
         doc = await generateDetailedReport(attendanceData, leaveData, selectedBranch);
       }
-      
+
       // Generate filename
       const branchName = selectedBranch === 'all' ? 'AllBranches' : selectedBranch.replace(/\s+/g, '');
       const filename = `AttendanceReport_${branchName}_${reportStartDate}_to_${reportEndDate}_${reportType}.pdf`;
-      
+
       // Save the PDF
       doc.save(filename);
-      
+
       setShowReportModal(false);
       alert('Report generated successfully!');
-      
+
     } catch (error) {
       console.error('Error generating report:', error);
       alert('Failed to generate report. Please try again.');
@@ -974,6 +989,47 @@ function SupAdmin() {
     localStorage.removeItem('currentUser');
     navigate('/login');
   };
+
+  // Filtered lists
+  const filteredInactiveUsers = inactiveUsers.filter(user => {
+    const matchesSearch = (
+      user.name?.toLowerCase().includes(pendingSearch.toLowerCase()) ||
+      user.email?.toLowerCase().includes(pendingSearch.toLowerCase()) ||
+      user.phone?.toLowerCase().includes(pendingSearch.toLowerCase()) ||
+      user.branch?.toLowerCase().includes(pendingSearch.toLowerCase()) ||
+      user.role?.toLowerCase().includes(pendingSearch.toLowerCase())
+    );
+    const matchesBranch = pendingBranchFilter === 'all' || user.branch === pendingBranchFilter;
+    const matchesRole = pendingRoleFilter === 'all' || user.role === pendingRoleFilter;
+    return matchesSearch && matchesBranch && matchesRole;
+  });
+
+  const filteredAllUsers = allUsers.filter(user => {
+    const matchesSearch = (
+      user.name?.toLowerCase().includes(allUsersSearch.toLowerCase()) ||
+      user.email?.toLowerCase().includes(allUsersSearch.toLowerCase()) ||
+      user.phone?.toLowerCase().includes(allUsersSearch.toLowerCase()) ||
+      user.branch?.toLowerCase().includes(allUsersSearch.toLowerCase()) ||
+      user.role?.toLowerCase().includes(allUsersSearch.toLowerCase())
+    );
+    const matchesBranch = allUsersBranchFilter === 'all' || user.branch === allUsersBranchFilter;
+    const matchesRole = allUsersRoleFilter === 'all' || user.role === allUsersRoleFilter;
+    const matchesStatus = allUsersStatusFilter === 'all' || user.status === allUsersStatusFilter;
+    return matchesSearch && matchesBranch && matchesRole && matchesStatus;
+  });
+
+  const filteredLeaveApplications = leaveApplications.filter(app => {
+    const matchesSearch = (
+      app.userName?.toLowerCase().includes(leaveSearch.toLowerCase()) ||
+      app.branch?.toLowerCase().includes(leaveSearch.toLowerCase()) ||
+      app.leaveType?.toLowerCase().includes(leaveSearch.toLowerCase()) ||
+      app.reason?.toLowerCase().includes(leaveSearch.toLowerCase())
+    );
+    const matchesStatus = leaveStatusFilter === 'all' || app.status === leaveStatusFilter;
+    const matchesBranch = leaveBranchFilter === 'all' || app.branch === leaveBranchFilter;
+    const matchesType = leaveTypeFilter === 'all' || app.leaveType === leaveTypeFilter;
+    return matchesSearch && matchesStatus && matchesBranch && matchesType;
+  });
 
   if (loading) {
     return (
@@ -995,9 +1051,9 @@ function SupAdmin() {
         <div className="landing-header">
           <h1>Super Admin Dashboard</h1>
           <p className="landing-description">Welcome, {user.name}! Full system management with user editing capabilities.</p>
-          <div style={{ 
-            color: timeLeft <= 10 ? '#ff6b6b' : '#61dafb', 
-            fontSize: '0.9em', 
+          <div style={{
+            color: timeLeft <= 10 ? '#ff6b6b' : '#61dafb',
+            fontSize: '0.9em',
             marginTop: '0.5rem',
             fontWeight: '500'
           }}>
@@ -1007,23 +1063,48 @@ function SupAdmin() {
 
         <div className="auth-form" style={{ maxWidth: '1000px', margin: '0 auto', padding: '1rem' }}>
           {/* Pending Approvals Section */}
-          <div style={{ 
-            background: 'rgba(255,255,255,0.1)', 
-            padding: '1.5rem', 
+          <div style={{
+            background: 'rgba(255,255,255,0.1)',
+            padding: '1.5rem',
             borderRadius: '12px',
             marginBottom: '1rem'
           }}>
             <h3 style={{ color: '#61dafb', marginBottom: '1rem', textAlign: 'center' }}>
-              Pending User Approvals ({inactiveUsers.length})
+              Pending User Approvals ({filteredInactiveUsers.length})
             </h3>
-            
-            {inactiveUsers.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#61dafb', padding: '2rem' }}>
-                <p>No pending approvals.</p>
-              </div>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={pendingSearch}
+                onChange={e => setPendingSearch(e.target.value)}
+                style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc', minWidth: '180px' }}
+              />
+              <select value={pendingBranchFilter} onChange={e => setPendingBranchFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}>
+                <option value="all">All Branches</option>
+                {availableBranches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
+              </select>
+              <select value={pendingRoleFilter} onChange={e => setPendingRoleFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}>
+                <option value="all">All Roles</option>
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+                <option value="super admin">Super Admin</option>
+              </select>
+            </div>
+            {filteredInactiveUsers.length === 0 ? (
+              (pendingSearch || pendingBranchFilter !== 'all' || pendingRoleFilter !== 'all') ? (
+                <div style={{ textAlign: 'center', color: '#ff6b6b', padding: '2rem' }}>
+                  <p>No such data found.</p>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: '#61dafb', padding: '2rem' }}>
+                  <p>No pending approvals.</p>
+                </div>
+              )
             ) : (
               <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                {inactiveUsers.map((user) => (
+                {filteredInactiveUsers.map((user) => (
                   <div key={user.id} style={{
                     background: 'rgba(255,255,255,0.05)',
                     padding: '1rem',
@@ -1032,42 +1113,42 @@ function SupAdmin() {
                     border: '2px solid #ffa726',
                     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                   }}>
-                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                       <div>
-                         <strong style={{ color: '#61dafb' }}>{user.name}</strong>
-                         <div style={{ fontSize: '0.9rem', color: '#e0e7ff' }}>
-                           {user.email} • {user.phone} • {user.branch} • {user.role}
-                         </div>
-                       </div>
-                       <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
-                         <button 
-                           className="landing-btn" 
-                           onClick={() => activateUser(user.id)}
-                           style={{ 
-                             minWidth: '100px', 
-                             minHeight: '35px', 
-                             fontSize: '0.8rem',
-                             padding: '0.5rem',
-                             backgroundColor: '#4caf50'
-                           }}
-                         >
-                           ✅ Activate
-                         </button>
-                         <button 
-                           className="landing-btn" 
-                           onClick={() => openEditModal(user)}
-                           style={{ 
-                             minWidth: '100px', 
-                             minHeight: '35px', 
-                             fontSize: '0.8rem',
-                             padding: '0.5rem',
-                             backgroundColor: '#2196f3'
-                           }}
-                         >
-                           ✏️ Edit
-                         </button>
-                       </div>
-                     </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div>
+                        <strong style={{ color: '#61dafb' }}>{user.name}</strong>
+                        <div style={{ fontSize: '0.9rem', color: '#e0e7ff' }}>
+                          {user.email} • {user.phone} • {user.branch} • {user.role}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
+                        <button
+                          className="landing-btn"
+                          onClick={() => activateUser(user.id)}
+                          style={{
+                            minWidth: '100px',
+                            minHeight: '35px',
+                            fontSize: '0.8rem',
+                            padding: '0.5rem',
+                            backgroundColor: '#4caf50'
+                          }}
+                        >
+                          ✅ Activate
+                        </button>
+                        <button
+                          className="landing-btn"
+                          onClick={() => openEditModal(user)}
+                          style={{
+                            minWidth: '100px',
+                            minHeight: '35px',
+                            fontSize: '0.8rem',
+                            padding: '0.5rem',
+                            backgroundColor: '#2196f3'
+                          }}
+                        >
+                          ✏️ Edit
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1075,149 +1156,192 @@ function SupAdmin() {
           </div>
 
           {/* All Users Section */}
-          <div style={{ 
-            background: 'rgba(255,255,255,0.1)', 
-            padding: '1.5rem', 
+          <div style={{
+            background: 'rgba(255,255,255,0.1)',
+            padding: '1.5rem',
             borderRadius: '12px',
             marginBottom: '1rem'
           }}>
             <h3 style={{ color: '#61dafb', marginBottom: '1rem', textAlign: 'center' }}>
-              All Users ({allUsers.length})
+              All Users ({filteredAllUsers.length})
             </h3>
-            
-            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-               {allUsers.map((userItem) => (
-                <div key={userItem.id} style={{
-                  background: 'rgba(255,255,255,0.05)',
-                  padding: '1rem',
-                  borderRadius: '8px',
-                  marginBottom: '0.5rem',
-                  border: `2px solid ${userItem.status === 'active' ? '#4caf50' : '#ffa726'}`,
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
-                }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    <div>
-                      <strong style={{ color: '#61dafb' }}>{userItem.name}</strong>
-                      <div style={{ fontSize: '0.9rem', color: '#e0e7ff' }}>
-                        {userItem.email} • {userItem.phone} • {userItem.branch} • {userItem.role}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={allUsersSearch}
+                onChange={e => setAllUsersSearch(e.target.value)}
+                style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc', minWidth: '180px' }}
+              />
+              <select value={allUsersBranchFilter} onChange={e => setAllUsersBranchFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}>
+                <option value="all">All Branches</option>
+                {availableBranches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
+              </select>
+              <select value={allUsersRoleFilter} onChange={e => setAllUsersRoleFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}>
+                <option value="all">All Roles</option>
+                <option value="employee">Employee</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+                <option value="super admin">Super Admin</option>
+              </select>
+              <select value={allUsersStatusFilter} onChange={e => setAllUsersStatusFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}>
+                <option value="all">All Statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+              </select>
+            </div>
+            {filteredAllUsers.length === 0 ? (
+              (allUsersSearch || allUsersBranchFilter !== 'all' || allUsersRoleFilter !== 'all' || allUsersStatusFilter !== 'all') ? (
+                <div style={{ textAlign: 'center', color: '#ff6b6b', padding: '2rem' }}>
+                  <p>No such data found.</p>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: '#61dafb', padding: '2rem' }}>
+                  <p>No users found.</p>
+                </div>
+              )
+            ) : (
+              <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                {filteredAllUsers.map((userItem) => (
+                  <div key={userItem.id} style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    padding: '1rem',
+                    borderRadius: '8px',
+                    marginBottom: '0.5rem',
+                    border: `2px solid ${userItem.status === 'active' ? '#4caf50' : '#ffa726'}`,
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                  }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+                      <div>
+                        <strong style={{ color: '#61dafb' }}>{userItem.name}</strong>
+                        <div style={{ fontSize: '0.9rem', color: '#e0e7ff' }}>
+                          {userItem.email} • {userItem.phone} • {userItem.branch} • {userItem.role}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: userItem.status === 'active' ? '#4caf50' : '#ffa726' }}>
+                          Status: {userItem.status.toUpperCase()}
+                          {userItem.id === user.id && (
+                            <span style={{ marginLeft: '8px', color: '#61dafb', fontWeight: 'bold' }}>
+                              (YOU)
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '0.8rem', color: userItem.status === 'active' ? '#4caf50' : '#ffa726' }}>
-                        Status: {userItem.status.toUpperCase()}
-                        {userItem.id === user.id && (
-                          <span style={{ marginLeft: '8px', color: '#61dafb', fontWeight: 'bold' }}>
-                            (YOU)
-                          </span>
+                      <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
+                        {userItem.status === 'inactive' ? (
+                          <button
+                            className="landing-btn"
+                            onClick={() => activateUser(userItem.id)}
+                            style={{
+                              minWidth: '100px',
+                              minHeight: '35px',
+                              fontSize: '0.8rem',
+                              padding: '0.5rem',
+                              backgroundColor: '#4caf50'
+                            }}
+                          >
+                            ✅ Activate
+                          </button>
+                        ) : (
+                          // Don't show deactivate button for current super admin user
+                          userItem.id !== user.id && (
+                            <button
+                              className="landing-btn"
+                              onClick={() => deactivateUser(userItem.id)}
+                              style={{
+                                minWidth: '100px',
+                                minHeight: '35px',
+                                fontSize: '0.8rem',
+                                padding: '0.5rem',
+                                backgroundColor: '#ff6b6b'
+                              }}
+                            >
+                              ❌ Deactivate
+                            </button>
+                          )
                         )}
+                        <button
+                          className="landing-btn"
+                          onClick={() => openEditModal(userItem)}
+                          style={{
+                            minWidth: '100px',
+                            minHeight: '35px',
+                            fontSize: '0.8rem',
+                            padding: '0.5rem',
+                            backgroundColor: '#2196f3'
+                          }}
+                        >
+                          ✏️ Edit User
+                        </button>
                       </div>
                     </div>
-                     <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
-                       {userItem.status === 'inactive' ? (
-                         <button 
-                           className="landing-btn" 
-                           onClick={() => activateUser(userItem.id)}
-                           style={{ 
-                             minWidth: '100px', 
-                             minHeight: '35px', 
-                             fontSize: '0.8rem',
-                             padding: '0.5rem',
-                             backgroundColor: '#4caf50'
-                           }}
-                         >
-                           ✅ Activate
-                         </button>
-                       ) : (
-                         // Don't show deactivate button for current super admin user
-                         userItem.id !== user.id && (
-                           <button 
-                             className="landing-btn" 
-                             onClick={() => deactivateUser(userItem.id)}
-                             style={{ 
-                               minWidth: '100px', 
-                               minHeight: '35px', 
-                               fontSize: '0.8rem',
-                               padding: '0.5rem',
-                               backgroundColor: '#ff6b6b'
-                             }}
-                           >
-                             ❌ Deactivate
-                           </button>
-                         )
-                       )}
-                       <button 
-                         className="landing-btn" 
-                         onClick={() => openEditModal(userItem)}
-                         style={{ 
-                           minWidth: '100px', 
-                           minHeight: '35px', 
-                           fontSize: '0.8rem',
-                           padding: '0.5rem',
-                           backgroundColor: '#2196f3'
-                         }}
-                       >
-                         ✏️ Edit User
-                       </button>
-                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          </div>
+                ))}
+              </div>
+            )}
+            {/* End All Users Section */}
 
-          {/* Report Generation Section */}
-          <div style={{ 
-            background: 'rgba(255,255,255,0.1)', 
-            padding: '1.5rem', 
-            borderRadius: '12px',
-            marginBottom: '1rem'
-          }}>
-            <h3 style={{ color: '#61dafb', marginBottom: '1rem', textAlign: 'center' }}>
-              📊 Generate Attendance Reports
-            </h3>
-            
-            <div style={{ textAlign: 'center' }}>
-              <button 
-                className="landing-btn" 
-                onClick={openReportModal}
-                style={{ 
-                  minWidth: '200px', 
-                  minHeight: '50px', 
-                  fontSize: '1.1rem',
-                  padding: '1rem 1.5rem',
-                  backgroundColor: '#4caf50'
-                }}
-              >
-                📄 Generate PDF Report
-              </button>
-            </div>
+
           </div>
 
           {/* Leave Applications Section */}
-          <div style={{ 
-            background: 'rgba(255,255,255,0.1)', 
-            padding: '1.5rem', 
+          <div style={{
+            background: 'rgba(255,255,255,0.1)',
+            padding: '1.5rem',
             borderRadius: '12px',
             marginBottom: '1rem'
           }}>
             <h3 style={{ color: '#61dafb', marginBottom: '1rem', textAlign: 'center' }}>
-              Leave Applications ({leaveApplications.filter(app => app.status === 'pending').length} Pending)
+              Leave Applications ({filteredLeaveApplications.filter(app => app.status === 'pending').length} Pending)
             </h3>
-            
-            {leaveApplications.length === 0 ? (
-              <div style={{ textAlign: 'center', color: '#61dafb', padding: '2rem' }}>
-                <p>No leave applications found.</p>
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={leaveSearch}
+                onChange={e => setLeaveSearch(e.target.value)}
+                style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc', minWidth: '180px' }}
+              />
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <select value={leaveStatusFilter} onChange={e => setLeaveStatusFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}>
+                  <option value="all">All Statuses</option>
+                  <option value="pending">Pending</option>
+                  <option value="approved">Approved</option>
+                  <option value="rejected">Rejected</option>
+                </select>
+                <select value={leaveBranchFilter} onChange={e => setLeaveBranchFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}>
+                  <option value="all">All Branches</option>
+                  {availableBranches.map(branch => <option key={branch} value={branch}>{branch}</option>)}
+                </select>
+                <select value={leaveTypeFilter} onChange={e => setLeaveTypeFilter(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }}>
+                  <option value="all">All Types</option>
+                  <option value="casual">Casual</option>
+                  <option value="sick">Sick</option>
+                  <option value="annual">Annual</option>
+                  <option value="other">Other</option>
+                </select>
               </div>
+            </div>
+            {filteredLeaveApplications.length === 0 ? (
+              (leaveSearch || leaveStatusFilter !== 'all' || leaveBranchFilter !== 'all' || leaveTypeFilter !== 'all') ? (
+                <div style={{ textAlign: 'center', color: '#ff6b6b', padding: '2rem' }}>
+                  <p>No such data found.</p>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'center', color: '#61dafb', padding: '2rem' }}>
+                  <p>No leave applications found.</p>
+                </div>
+              )
             ) : (
               <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                {leaveApplications.map((application) => (
+                {filteredLeaveApplications.map((application) => (
                   <div key={application.id} style={{
                     background: 'rgba(255,255,255,0.05)',
                     padding: '1rem',
                     borderRadius: '8px',
                     marginBottom: '0.5rem',
-                    border: `2px solid ${
-                      application.status === 'pending' ? '#ffa726' :
-                      application.status === 'approved' ? '#4caf50' : '#f44336'
-                    }`,
+                    border: `2px solid ${application.status === 'pending' ? '#ffa726' :
+                        application.status === 'approved' ? '#4caf50' : '#f44336'
+                      }`,
                     boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
                   }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '0.5rem' }}>
@@ -1229,51 +1353,51 @@ function SupAdmin() {
                             borderRadius: '12px',
                             fontSize: '0.8rem',
                             fontWeight: 'bold',
-                            backgroundColor: 
+                            backgroundColor:
                               application.status === 'pending' ? '#ffa726' :
-                              application.status === 'approved' ? '#4caf50' : '#f44336',
+                                application.status === 'approved' ? '#4caf50' : '#f44336',
                             color: '#fff'
                           }}>
                             {application.status.toUpperCase()}
                           </span>
                         </div>
-                        
+
                         <div style={{ fontSize: '0.9rem', color: '#e0e7ff', marginBottom: '0.5rem' }}>
                           <div><strong>Date:</strong> {new Date(application.leaveDate).toLocaleDateString()}</div>
                           <div><strong>Type:</strong> {application.leaveType.charAt(0).toUpperCase() + application.leaveType.slice(1)} Leave</div>
                           <div><strong>Branch:</strong> {application.branch}</div>
                           <div><strong>Applied:</strong> {new Date(application.appliedAt.seconds * 1000).toLocaleDateString()}</div>
                         </div>
-                        
+
                         <div style={{ fontSize: '0.9rem', color: '#fff', marginBottom: '0.5rem' }}>
                           <strong>Reason:</strong> {application.reason}
                         </div>
-                        
+
                         {application.status === 'approved' && application.approvedBy && (
                           <div style={{ fontSize: '0.8rem', color: '#4caf50' }}>
                             ✅ Approved by {application.approvedBy} on {new Date(application.approvedAt.seconds * 1000).toLocaleDateString()}
                           </div>
                         )}
-                        
+
                         {application.status === 'rejected' && application.rejectedBy && (
                           <div style={{ fontSize: '0.8rem', color: '#f44336' }}>
                             ❌ Rejected by {application.rejectedBy} on {new Date(application.rejectedAt.seconds * 1000).toLocaleDateString()}
                           </div>
                         )}
                       </div>
-                      
+
                       {application.status === 'pending' && (
                         <div style={{ display: 'flex', gap: '0.5rem', flexDirection: 'column' }}>
-                          <button 
-                            className="landing-btn" 
+                          <button
+                            className="landing-btn"
                             onClick={() => {
                               if (window.confirm(`Approve leave for ${application.userName} on ${new Date(application.leaveDate).toLocaleDateString()}?`)) {
                                 approveLeave(application.id, application.empId, application.leaveDate);
                               }
                             }}
-                            style={{ 
-                              minWidth: '80px', 
-                              minHeight: '35px', 
+                            style={{
+                              minWidth: '80px',
+                              minHeight: '35px',
                               fontSize: '0.8rem',
                               padding: '0.5rem',
                               backgroundColor: '#4caf50'
@@ -1281,16 +1405,16 @@ function SupAdmin() {
                           >
                             ✅ Approve
                           </button>
-                          <button 
-                            className="landing-btn" 
+                          <button
+                            className="landing-btn"
                             onClick={() => {
                               if (window.confirm(`Reject leave for ${application.userName}?`)) {
                                 rejectLeave(application.id);
                               }
                             }}
-                            style={{ 
-                              minWidth: '80px', 
-                              minHeight: '35px', 
+                            style={{
+                              minWidth: '80px',
+                              minHeight: '35px',
                               fontSize: '0.8rem',
                               padding: '0.5rem',
                               backgroundColor: '#f44336'
@@ -1309,25 +1433,25 @@ function SupAdmin() {
 
           {/* Navigation Buttons */}
           <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="landing-btn" onClick={() => navigate('/account')} style={{ 
-              minWidth: '120px', 
-              minHeight: '50px', 
+            <button className="landing-btn" onClick={() => navigate('/account')} style={{
+              minWidth: '120px',
+              minHeight: '50px',
               fontSize: '1rem',
               padding: '1rem 1.5rem'
             }}>
               📱 My Account
             </button>
-            <button className="landing-btn" onClick={handleLogout} style={{ 
-              minWidth: '120px', 
-              minHeight: '50px', 
+            <button className="landing-btn" onClick={handleLogout} style={{
+              minWidth: '120px',
+              minHeight: '50px',
               fontSize: '1rem',
               padding: '1rem 1.5rem'
             }}>
               Logout
             </button>
-            <button className="landing-btn" onClick={() => navigate('/')} style={{ 
-              minWidth: '120px', 
-              minHeight: '50px', 
+            <button className="landing-btn" onClick={() => navigate('/')} style={{
+              minWidth: '120px',
+              minHeight: '50px',
               fontSize: '1rem',
               padding: '1rem 1.5rem'
             }}>
@@ -1335,342 +1459,10 @@ function SupAdmin() {
             </button>
           </div>
         </div>
-      </div>
 
-      {/* Report Generation Modal */}
-      {showReportModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.8)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
-          <div className="edit-user-modal" style={{
-            background: 'linear-gradient(135deg, #61dafb 0%, #646cff 100%)',
-            padding: '2rem',
-            borderRadius: '12px',
-            maxWidth: '500px',
-            width: '90%',
-            maxHeight: '90vh',
-            overflowY: 'auto',
-            boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-            border: '2px solid rgba(255,255,255,0.2)'
-          }}>
-            <h3 style={{ 
-              color: '#fff', 
-              marginBottom: '1.5rem',
-              fontSize: '1.5rem',
-              fontWeight: 'bold',
-              textAlign: 'center'
-            }}>
-              📊 Generate Attendance Report
-            </h3>
-            
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                Report Type:
-              </label>
-              <select
-                value={reportType}
-                onChange={(e) => setReportType(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  borderRadius: '8px',
-                  border: '1px solid #ccc',
-                  fontSize: '1rem',
-                  backgroundColor: '#fff'
-                }}
-              >
-                <option value="summary">Summary Report</option>
-                <option value="detailed">Detailed Report</option>
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                Branch:
-              </label>
-              <select
-                value={selectedBranch}
-                onChange={(e) => setSelectedBranch(e.target.value)}
-                style={{
-                  width: '100%',
-                  padding: '0.75rem',
-                  borderRadius: '8px',
-                  border: '1px solid #ccc',
-                  fontSize: '1rem',
-                  backgroundColor: '#fff'
-                }}
-              >
-                <option value="all">All Branches</option>
-                {availableBranches.map(branch => (
-                  <option key={branch} value={branch}>{branch}</option>
-                ))}
-              </select>
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                📅 Start Date:
-              </label>
-              <div 
-                style={{
-                  position: 'relative',
-                  cursor: 'pointer'
-                }}
-                onClick={(e) => {
-                  // Find the input and trigger calendar
-                  const input = e.currentTarget.querySelector('input[type="date"]');
-                  if (input) {
-                    input.focus();
-                    input.click();
-                    // Try to open calendar picker if supported
-                    if (input.showPicker) {
-                      input.showPicker();
-                    }
-                  }
-                }}
-              >
-                <input
-                  type="date"
-                  value={reportStartDate}
-                  onChange={(e) => setReportStartDate(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid #ccc',
-                    fontSize: '1rem',
-                    backgroundColor: '#fff',
-                    cursor: 'pointer',
-                    outline: 'none',
-                    transition: 'border-color 0.3s ease',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'textfield',
-                    appearance: 'none'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#61dafb'}
-                  onBlur={(e) => e.target.style.borderColor = '#ccc'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Force calendar to open on any click
-                    if (e.target.showPicker) {
-                      e.target.showPicker();
-                    }
-                  }}
-                  placeholder="Select start date"
-                />
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#e0e7ff', marginTop: '0.25rem' }}>
-                Click anywhere on the date field to open calendar picker
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '1rem' }}>
-              <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                📅 End Date:
-              </label>
-              <div 
-                style={{
-                  position: 'relative',
-                  cursor: 'pointer'
-                }}
-                onClick={(e) => {
-                  // Find the input and trigger calendar
-                  const input = e.currentTarget.querySelector('input[type="date"]');
-                  if (input) {
-                    input.focus();
-                    input.click();
-                    // Try to open calendar picker if supported
-                    if (input.showPicker) {
-                      input.showPicker();
-                    }
-                  }
-                }}
-              >
-                <input
-                  type="date"
-                  value={reportEndDate}
-                  onChange={(e) => setReportEndDate(e.target.value)}
-                  min={reportStartDate || undefined}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '1px solid #ccc',
-                    fontSize: '1rem',
-                    backgroundColor: '#fff',
-                    cursor: 'pointer',
-                    outline: 'none',
-                    transition: 'border-color 0.3s ease',
-                    WebkitAppearance: 'none',
-                    MozAppearance: 'textfield',
-                    appearance: 'none'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#61dafb'}
-                  onBlur={(e) => e.target.style.borderColor = '#ccc'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    // Force calendar to open on any click
-                    if (e.target.showPicker) {
-                      e.target.showPicker();
-                    }
-                  }}
-                  placeholder="Select end date"
-                />
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#e0e7ff', marginTop: '0.25rem' }}>
-                Click anywhere on the date field to open calendar picker
-              </div>
-            </div>
-
-            {/* Quick Date Range Presets */}
-            <div style={{ marginBottom: '1.5rem' }}>
-              <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                ⚡ Quick Presets:
-              </label>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const today = new Date();
-                    const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-                    setReportStartDate(lastWeek.toISOString().split('T')[0]);
-                    setReportEndDate(today.toISOString().split('T')[0]);
-                  }}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    transition: 'background-color 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.2)'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                >
-                  Last 7 Days
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const today = new Date();
-                    const lastMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-                    setReportStartDate(lastMonth.toISOString().split('T')[0]);
-                    setReportEndDate(today.toISOString().split('T')[0]);
-                  }}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    transition: 'background-color 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.2)'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                >
-                  Last 30 Days
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const today = new Date();
-                    const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-                    setReportStartDate(firstDayOfMonth.toISOString().split('T')[0]);
-                    setReportEndDate(today.toISOString().split('T')[0]);
-                  }}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    transition: 'background-color 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.2)'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                >
-                  This Month
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const today = new Date();
-                    const firstDayOfYear = new Date(today.getFullYear(), 0, 1);
-                    setReportStartDate(firstDayOfYear.toISOString().split('T')[0]);
-                    setReportEndDate(today.toISOString().split('T')[0]);
-                  }}
-                  style={{
-                    padding: '0.5rem 0.75rem',
-                    borderRadius: '6px',
-                    border: '1px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '0.8rem',
-                    cursor: 'pointer',
-                    transition: 'background-color 0.3s ease'
-                  }}
-                  onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.2)'}
-                  onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
-                >
-                  This Year
-                </button>
-              </div>
-              <div style={{ fontSize: '0.8rem', color: '#e0e7ff', marginTop: '0.5rem' }}>
-                Click any preset to auto-fill date range
-              </div>
-            </div>
-
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-              <button 
-                className="landing-btn" 
-                onClick={() => setShowReportModal(false)}
-                style={{ 
-                  background: 'rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.3)',
-                  minWidth: '100px'
-                }}
-              >
-                Cancel
-              </button>
-              <button 
-                className="landing-btn" 
-                onClick={handleGenerateReport}
-                disabled={generatingReport}
-                style={{ 
-                  background: 'rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.3)',
-                  minWidth: '100px',
-                  opacity: generatingReport ? 0.6 : 1
-                }}
-              >
-                {generatingReport ? 'Generating...' : 'Generate PDF'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Edit User Modal */}
-      {showEditModal && (
-        <div
-          style={{
+        {/* Report Generation Modal */}
+        {showReportModal && (
+          <div style={{
             position: 'fixed',
             top: 0,
             left: 0,
@@ -1680,267 +1472,601 @@ function SupAdmin() {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            zIndex: 2000
-          }}
-        >
-          <div
-            className="edit-user-modal"
-            style={{
+            zIndex: 1000
+          }}>
+            <div className="edit-user-modal" style={{
               background: 'linear-gradient(135deg, #61dafb 0%, #646cff 100%)',
               padding: '2rem',
               borderRadius: '12px',
-              maxWidth: '600px',
+              maxWidth: '500px',
               width: '90%',
-              textAlign: 'center',
-              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-              border: '2px solid rgba(255,255,255,0.2)',
               maxHeight: '90vh',
               overflowY: 'auto',
-            }}
-          >
-            <h3 style={{ 
-              color: '#fff', 
-              marginBottom: '1.5rem',
-              fontSize: '1.5rem',
-              fontWeight: 'bold'
+              boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+              border: '2px solid rgba(255,255,255,0.2)'
             }}>
-              ✏️ Edit User: {editingUser?.name}
-            </h3>
-            
-            <div
-              className="edit-user-grid"
-              style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '1rem',
+              <h3 style={{
+                color: '#fff',
                 marginBottom: '1.5rem',
-                width: '100%',
-                maxWidth: '100%',
-              }}
-            >
-              {/* name  */}
-              <div style={{ textAlign: 'left' }}>
+                fontSize: '1.5rem',
+                fontWeight: 'bold',
+                textAlign: 'center'
+              }}>
+                📊 Generate Attendance Report
+              </h3>
+
+              <div style={{ marginBottom: '1rem' }}>
                 <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  Full Name *
-                </label>
-                <input
-                  type="text"
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({...editForm, name: e.target.value})}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '1rem'
-                  }}
-                />
-              </div>
-              {/* email  */}
-              <div style={{ textAlign: 'left' }}>
-                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  Email *
-                </label>
-                <input
-                  type="email"
-                  value={editForm.email}
-                  onChange={(e) => setEditForm({...editForm, email: e.target.value})}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '1rem'
-                  }}
-                />
-              </div>
-              {/* phone  */}
-              <div style={{ textAlign: 'left' }}>
-                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  Phone *
-                </label>
-                <input
-                  type="tel"
-                  value={editForm.phone}
-                  onChange={(e) => setEditForm({...editForm, phone: e.target.value})}
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '1rem'
-                  }}
-                />
-              </div>
-              {/* branch */}
-              <div style={{ textAlign: 'left' }}>
-                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  Branch *
+                  Report Type:
                 </label>
                 <select
-                  value={editForm.branch}
-                  onChange={(e) => setEditForm({...editForm, branch: e.target.value})}
+                  value={reportType}
+                  onChange={(e) => setReportType(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '0.75rem',
                     borderRadius: '8px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '1rem'
+                    border: '1px solid #ccc',
+                    fontSize: '1rem',
+                    backgroundColor: '#fff'
                   }}
                 >
-                  <option value="Branch A" style={{ color: '#000' }}>Branch A</option>
-                  <option value="Branch B" style={{ color: '#000' }}>Branch B</option>
-                  <option value="Branch C" style={{ color: '#000' }}>Branch C</option>
-                  <option value="Head Office" style={{ color: '#000' }}>Head Office</option>
+                  <option value="summary">Summary Report</option>
+                  <option value="detailed">Detailed Report</option>
                 </select>
               </div>
-              {/* role  */}
-              <div style={{ textAlign: 'left' }}>
+
+              <div style={{ marginBottom: '1rem' }}>
                 <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  Role *
+                  Branch:
                 </label>
                 <select
-                  value={editForm.role}
-                  onChange={(e) => setEditForm({...editForm, role: e.target.value})}
+                  value={selectedBranch}
+                  onChange={(e) => setSelectedBranch(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '0.75rem',
                     borderRadius: '8px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '1rem'
+                    border: '1px solid #ccc',
+                    fontSize: '1rem',
+                    backgroundColor: '#fff'
                   }}
                 >
-                  <option value="employee" style={{ color: '#000' }}>Employee</option>
-                  <option value="manager" style={{ color: '#000' }}>Manager</option>
-                  <option value="admin" style={{ color: '#000' }}>Admin</option>
-                  <option value="super admin" style={{ color: '#000' }}>Super Admin</option>
+                  <option value="all">All Branches</option>
+                  {availableBranches.map(branch => (
+                    <option key={branch} value={branch}>{branch}</option>
+                  ))}
                 </select>
               </div>
-              {/* password  */}
-              <div style={{ textAlign: 'left' }}>
-                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  New Password (Optional)
-                </label>
-                <input
-                  type="password"
-                  value={editForm.password}
-                  onChange={(e) => setEditForm({...editForm, password: e.target.value})}
-                  placeholder="Leave empty to keep current password"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '1rem'
-                  }}
-                />
-              </div>
-              {/* location latitude  */}
-              <div style={{ textAlign: 'left' }}>
-                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  Location Latitude (Optional)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={editForm.location.lat}
-                  onChange={(e) => setEditForm({...editForm, location: {...editForm.location, lat: e.target.value}})}
-                  placeholder="e.g., 24.8607"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '1rem'
-                  }}
-                />
-              </div>
-              {/* location longitude  */}
-              <div style={{ textAlign: 'left' }}>
-                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
-                  Location Longitude (Optional)
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  value={editForm.location.lng}
-                  onChange={(e) => setEditForm({...editForm, location: {...editForm.location, lng: e.target.value}})}
-                  placeholder="e.g., 67.0011"
-                  style={{
-                    width: '100%',
-                    padding: '0.75rem',
-                    borderRadius: '8px',
-                    border: '2px solid rgba(255,255,255,0.3)',
-                    backgroundColor: 'rgba(255,255,255,0.1)',
-                    color: '#fff',
-                    fontSize: '1rem'
-                  }}
-                />
-              </div>
-            </div>
 
-            {/* Location Help Note */} 
-            <div style={{ 
-              background: 'rgba(255,255,255,0.1)', 
-              padding: '1rem', 
-              borderRadius: '8px', 
-              marginBottom: '1.5rem',
-              border: '1px solid rgba(255,255,255,0.2)'
-            }}>
-              <div style={{ color: '#61dafb', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
-                📍 Location Coordinates Help
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  📅 Start Date:
+                </label>
+                <div
+                  style={{
+                    position: 'relative',
+                    cursor: 'pointer'
+                  }}
+                  onClick={(e) => {
+                    // Find the input and trigger calendar
+                    const input = e.currentTarget.querySelector('input[type="date"]');
+                    if (input) {
+                      input.focus();
+                      input.click();
+                      // Try to open calendar picker if supported
+                      if (input.showPicker) {
+                        input.showPicker();
+                      }
+                    }
+                  }}
+                >
+                  <input
+                    type="date"
+                    value={reportStartDate}
+                    onChange={(e) => setReportStartDate(e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid #ccc',
+                      fontSize: '1rem',
+                      backgroundColor: '#fff',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      transition: 'border-color 0.3s ease',
+                      WebkitAppearance: 'none',
+                      MozAppearance: 'textfield',
+                      appearance: 'none'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = '#61dafb'}
+                    onBlur={(e) => e.target.style.borderColor = '#ccc'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Force calendar to open on any click
+                      if (e.target.showPicker) {
+                        e.target.showPicker();
+                      }
+                    }}
+                    placeholder="Select start date"
+                  />
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#e0e7ff', marginTop: '0.25rem' }}>
+                  Click anywhere on the date field to open calendar picker
+                </div>
               </div>
-              <div style={{ color: '#e0e7ff', fontSize: '0.8rem', lineHeight: '1.4' }}>
-                <div>• <strong>Latitude:</strong> North-South position (-90 to +90)</div>
-                <div>• <strong>Longitude:</strong> East-West position (-180 to +180)</div>
-                <div>• <strong>Pakistan Examples:</strong> Karachi (24.8607, 67.0011), Lahore (31.5204, 74.3587)</div>
-                <div>• <strong>Leave empty</strong> to keep current location or set to branch default</div>
-              </div>
-            </div>
 
-            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-              <button 
-                className="landing-btn" 
-                onClick={closeEditModal}
-                style={{ 
-                  background: 'rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.3)',
-                  minWidth: '120px'
-                }}
-              >
-                Cancel
-              </button>
-              <button 
-                className="landing-btn" 
-                onClick={updateUser}
-                style={{ 
-                  background: 'rgba(255,255,255,0.2)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.3)',
-                  minWidth: '120px'
-                }}
-              >
-                Update User
-              </button>
+              <div style={{ marginBottom: '1rem' }}>
+                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  📅 End Date:
+                </label>
+                <div
+                  style={{
+                    position: 'relative',
+                    cursor: 'pointer'
+                  }}
+                  onClick={(e) => {
+                    // Find the input and trigger calendar
+                    const input = e.currentTarget.querySelector('input[type="date"]');
+                    if (input) {
+                      input.focus();
+                      input.click();
+                      // Try to open calendar picker if supported
+                      if (input.showPicker) {
+                        input.showPicker();
+                      }
+                    }
+                  }}
+                >
+                  <input
+                    type="date"
+                    value={reportEndDate}
+                    onChange={(e) => setReportEndDate(e.target.value)}
+                    min={reportStartDate || undefined}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '1px solid #ccc',
+                      fontSize: '1rem',
+                      backgroundColor: '#fff',
+                      cursor: 'pointer',
+                      outline: 'none',
+                      transition: 'border-color 0.3s ease',
+                      WebkitAppearance: 'none',
+                      MozAppearance: 'textfield',
+                      appearance: 'none'
+                    }}
+                    onFocus={(e) => e.target.style.borderColor = '#61dafb'}
+                    onBlur={(e) => e.target.style.borderColor = '#ccc'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Force calendar to open on any click
+                      if (e.target.showPicker) {
+                        e.target.showPicker();
+                      }
+                    }}
+                    placeholder="Select end date"
+                  />
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#e0e7ff', marginTop: '0.25rem' }}>
+                  Click anywhere on the date field to open calendar picker
+                </div>
+              </div>
+
+              {/* Quick Date Range Presets */}
+              <div style={{ marginBottom: '1.5rem' }}>
+                <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                  ⚡ Quick Presets:
+                </label>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date();
+                      const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+                      setReportStartDate(lastWeek.toISOString().split('T')[0]);
+                      setReportEndDate(today.toISOString().split('T')[0]);
+                    }}
+                    style={{
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.3s ease'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.2)'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+                  >
+                    Last 7 Days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date();
+                      const lastMonth = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+                      setReportStartDate(lastMonth.toISOString().split('T')[0]);
+                      setReportEndDate(today.toISOString().split('T')[0]);
+                    }}
+                    style={{
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.3s ease'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.2)'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+                  >
+                    Last 30 Days
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date();
+                      const firstDayOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                      setReportStartDate(firstDayOfMonth.toISOString().split('T')[0]);
+                      setReportEndDate(today.toISOString().split('T')[0]);
+                    }}
+                    style={{
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.3s ease'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.2)'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+                  >
+                    This Month
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const today = new Date();
+                      const firstDayOfYear = new Date(today.getFullYear(), 0, 1);
+                      setReportStartDate(firstDayOfYear.toISOString().split('T')[0]);
+                      setReportEndDate(today.toISOString().split('T')[0]);
+                    }}
+                    style={{
+                      padding: '0.5rem 0.75rem',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                      cursor: 'pointer',
+                      transition: 'background-color 0.3s ease'
+                    }}
+                    onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.2)'}
+                    onMouseLeave={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.1)'}
+                  >
+                    This Year
+                  </button>
+                </div>
+                <div style={{ fontSize: '0.8rem', color: '#e0e7ff', marginTop: '0.5rem' }}>
+                  Click any preset to auto-fill date range
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                <button
+                  className="landing-btn"
+                  onClick={() => setShowReportModal(false)}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    minWidth: '100px'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="landing-btn"
+                  onClick={handleGenerateReport}
+                  disabled={generatingReport}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    color: '#fff',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    minWidth: '100px',
+                    opacity: generatingReport ? 0.6 : 1
+                  }}
+                >
+                  {generatingReport ? 'Generating...' : 'Generate PDF'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Edit User Modal */}
+        {showEditModal && (
+          <div
+            style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.8)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 2000
+            }}
+          >
+            <div
+              className="edit-user-modal"
+              style={{
+                background: 'linear-gradient(135deg, #61dafb 0%, #646cff 100%)',
+                padding: '2rem',
+                borderRadius: '12px',
+                maxWidth: '600px',
+                width: '90%',
+                textAlign: 'center',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                border: '2px solid rgba(255,255,255,0.2)',
+                maxHeight: '90vh',
+                overflowY: 'auto',
+              }}
+            >
+              <h3 style={{
+                color: '#fff',
+                marginBottom: '1.5rem',
+                fontSize: '1.5rem',
+                fontWeight: 'bold'
+              }}>
+                ✏️ Edit User: {editingUser?.name}
+              </h3>
+
+              <div
+                className="edit-user-grid"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '1fr 1fr',
+                  gap: '3rem',
+                  marginBottom: '1.5rem',
+                  width: '100%',
+                  maxWidth: '100%',
+                }}
+              >
+                {/* name  */}
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '1rem'
+                    }}
+                  />
+                </div>
+                {/* email  */}
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Email *
+                  </label>
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '1rem'
+                    }}
+                  />
+                </div>
+                {/* phone  */}
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Phone *
+                  </label>
+                  <input
+                    type="tel"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '1rem'
+                    }}
+                  />
+                </div>
+                {/* branch */}
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Branch *
+                  </label>
+                  <select
+                    value={editForm.branch}
+                    onChange={(e) => setEditForm({ ...editForm, branch: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '1rem'
+                    }}
+                  >
+                    <option value="Branch A" style={{ color: '#000' }}>Branch A</option>
+                    <option value="Branch B" style={{ color: '#000' }}>Branch B</option>
+                    <option value="Branch C" style={{ color: '#000' }}>Branch C</option>
+                    <option value="Head Office" style={{ color: '#000' }}>Head Office</option>
+                  </select>
+                </div>
+                {/* role  */}
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Role *
+                  </label>
+                  <select
+                    value={editForm.role}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '1rem'
+                    }}
+                  >
+                    <option value="employee" style={{ color: '#000' }}>Employee</option>
+                    <option value="manager" style={{ color: '#000' }}>Manager</option>
+                    <option value="admin" style={{ color: '#000' }}>Admin</option>
+                    <option value="super admin" style={{ color: '#000' }}>Super Admin</option>
+                  </select>
+                </div>
+                {/* password  */}
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    New Password (Optional)
+                  </label>
+                  <input
+                    type="password"
+                    value={editForm.password}
+                    onChange={(e) => setEditForm({ ...editForm, password: e.target.value })}
+                    placeholder="Leave empty to keep current password"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '1rem'
+                    }}
+                  />
+                </div>
+                {/* location latitude  */}
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Location Latitude (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={editForm.location.lat}
+                    onChange={(e) => setEditForm({ ...editForm, location: { ...editForm.location, lat: e.target.value } })}
+                    placeholder="e.g., 24.8607"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '1rem'
+                    }}
+                  />
+                </div>
+                {/* location longitude  */}
+                <div style={{ textAlign: 'left' }}>
+                  <label style={{ color: '#fff', display: 'block', marginBottom: '0.5rem', fontWeight: 'bold' }}>
+                    Location Longitude (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    step="any"
+                    value={editForm.location.lng}
+                    onChange={(e) => setEditForm({ ...editForm, location: { ...editForm.location, lng: e.target.value } })}
+                    placeholder="e.g., 67.0011"
+                    style={{
+                      width: '100%',
+                      padding: '0.75rem',
+                      borderRadius: '8px',
+                      border: '2px solid rgba(255,255,255,0.3)',
+                      backgroundColor: 'rgba(255,255,255,0.1)',
+                      color: '#fff',
+                      fontSize: '1rem'
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Location Help Note and Buttons - wrap in fragment to fix adjacent JSX error */}
+              <>
+                <div style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  padding: '1rem',
+                  borderRadius: '8px',
+                  marginBottom: '1.5rem',
+                  border: '1px solid rgba(255,255,255,0.2)'
+                }}>
+                  <div style={{ color: '#61dafb', fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '0.5rem' }}>
+                    📍 Location Coordinates Help
+                  </div>
+                  <div style={{ color: '#e0e7ff', fontSize: '0.8rem', lineHeight: '1.4' }}>
+                    <div>• <strong>Latitude:</strong> North-South position (-90 to +90)</div>
+                    <div>• <strong>Longitude:</strong> East-West position (-180 to +180)</div>
+                    <div>• <strong>Pakistan Examples:</strong> Karachi (24.8607, 67.0011), Lahore (31.5204, 74.3587)</div>
+                    <div>• <strong>Leave empty</strong> to keep current location or set to branch default</div>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+                  <button
+                    className="landing-btn"
+                    onClick={closeEditModal}
+                    style={{
+                      background: 'rgba(255,255,255,0.2)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      minWidth: '120px'
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    className="landing-btn"
+                    onClick={updateUser}
+                    style={{
+                      background: 'rgba(255,255,255,0.2)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.3)',
+                      minWidth: '120px'
+                    }}
+                  >
+                    Update User
+                  </button>
+                </div>
+              </>
+            </div>
+          </div>
+        )}
+      </div>
     </>
   );
 }

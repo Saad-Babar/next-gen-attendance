@@ -51,6 +51,16 @@ function SupAdmin() {
   const [leaveBranchFilter, setLeaveBranchFilter] = useState('all');
   const [leaveTypeFilter, setLeaveTypeFilter] = useState('all');
 
+  // Add state for date filters
+  const todayStr = new Date().toISOString().split('T')[0];
+  const last30Str = new Date(Date.now() - 29 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  const [pendingStartDate, setPendingStartDate] = useState(last30Str);
+  const [pendingEndDate, setPendingEndDate] = useState(todayStr);
+  const [allUsersStartDate, setAllUsersStartDate] = useState(last30Str);
+  const [allUsersEndDate, setAllUsersEndDate] = useState(todayStr);
+  const [leaveStartDate, setLeaveStartDate] = useState(last30Str);
+  const [leaveEndDate, setLeaveEndDate] = useState(todayStr);
+
   useEffect(() => {
     // Get user data from localStorage
     const currentUser = localStorage.getItem('currentUser');
@@ -1001,7 +1011,13 @@ function SupAdmin() {
     );
     const matchesBranch = pendingBranchFilter === 'all' || user.branch === pendingBranchFilter;
     const matchesRole = pendingRoleFilter === 'all' || user.role === pendingRoleFilter;
-    return matchesSearch && matchesBranch && matchesRole;
+    // Date filter
+    let matchesDate = true;
+    if (user.registeredAt && user.registeredAt.seconds) {
+      const regDate = new Date(user.registeredAt.seconds * 1000).toISOString().split('T')[0];
+      matchesDate = regDate >= pendingStartDate && regDate <= pendingEndDate;
+    }
+    return matchesSearch && matchesBranch && matchesRole && matchesDate;
   });
 
   const filteredAllUsers = allUsers.filter(user => {
@@ -1015,7 +1031,13 @@ function SupAdmin() {
     const matchesBranch = allUsersBranchFilter === 'all' || user.branch === allUsersBranchFilter;
     const matchesRole = allUsersRoleFilter === 'all' || user.role === allUsersRoleFilter;
     const matchesStatus = allUsersStatusFilter === 'all' || user.status === allUsersStatusFilter;
-    return matchesSearch && matchesBranch && matchesRole && matchesStatus;
+    // Date filter
+    let matchesDate = true;
+    if (user.registeredAt && user.registeredAt.seconds) {
+      const regDate = new Date(user.registeredAt.seconds * 1000).toISOString().split('T')[0];
+      matchesDate = regDate >= allUsersStartDate && regDate <= allUsersEndDate;
+    }
+    return matchesSearch && matchesBranch && matchesRole && matchesStatus && matchesDate;
   });
 
   const filteredLeaveApplications = leaveApplications.filter(app => {
@@ -1028,7 +1050,13 @@ function SupAdmin() {
     const matchesStatus = leaveStatusFilter === 'all' || app.status === leaveStatusFilter;
     const matchesBranch = leaveBranchFilter === 'all' || app.branch === leaveBranchFilter;
     const matchesType = leaveTypeFilter === 'all' || app.leaveType === leaveTypeFilter;
-    return matchesSearch && matchesStatus && matchesBranch && matchesType;
+    // Date filter
+    let matchesDate = true;
+    if (app.appliedAt && app.appliedAt.seconds) {
+      const appDate = new Date(app.appliedAt.seconds * 1000).toISOString().split('T')[0];
+      matchesDate = appDate >= leaveStartDate && appDate <= leaveEndDate;
+    }
+    return matchesSearch && matchesStatus && matchesBranch && matchesType && matchesDate;
   });
 
   if (loading) {
@@ -1091,6 +1119,8 @@ function SupAdmin() {
                 <option value="admin">Admin</option>
                 <option value="super admin">Super Admin</option>
               </select>
+              <input type="date" value={pendingStartDate} max={pendingEndDate} onChange={e => setPendingStartDate(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }} />
+              <input type="date" value={pendingEndDate} min={pendingStartDate} max={todayStr} onChange={e => setPendingEndDate(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }} />
             </div>
             {filteredInactiveUsers.length === 0 ? (
               (pendingSearch || pendingBranchFilter !== 'all' || pendingRoleFilter !== 'all') ? (
@@ -1189,6 +1219,8 @@ function SupAdmin() {
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
+              <input type="date" value={allUsersStartDate} max={allUsersEndDate} onChange={e => setAllUsersStartDate(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }} />
+              <input type="date" value={allUsersEndDate} min={allUsersStartDate} max={todayStr} onChange={e => setAllUsersEndDate(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }} />
             </div>
             {filteredAllUsers.length === 0 ? (
               (allUsersSearch || allUsersBranchFilter !== 'all' || allUsersRoleFilter !== 'all' || allUsersStatusFilter !== 'all') ? (
@@ -1319,6 +1351,8 @@ function SupAdmin() {
                   <option value="annual">Annual</option>
                   <option value="other">Other</option>
                 </select>
+                <input type="date" value={leaveStartDate} max={leaveEndDate} onChange={e => setLeaveStartDate(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }} />
+                <input type="date" value={leaveEndDate} min={leaveStartDate} max={todayStr} onChange={e => setLeaveEndDate(e.target.value)} style={{ padding: '0.5rem', borderRadius: '6px', border: '1px solid #ccc' }} />
               </div>
             </div>
             {filteredLeaveApplications.length === 0 ? (
